@@ -1,0 +1,28 @@
+[project]
+name = "lhmy-2-0"
+version = "0.1.0"
+description = "LHMY 2.0 backend services"
+requires-python = ">=3.13"
+
+# 依赖由 uv + pyproject.toml/uv.lock 统一管理（避免双份依赖源）
+dependencies = [
+  "fastapi==0.116.1",
+  "uvicorn[standard]==0.35.0",
+  "pydantic==2.11.7",
+  "pydantic-settings==2.10.1",
+  "python-dotenv==1.1.1",
+  "SQLAlchemy[asyncio]==2.0.43",
+  "aiomysql==0.2.0",
+  "alembic==1.16.5",
+  "redis==6.4.0",
+  "PyJWT==2.10.1",
+  "bcrypt==5.0.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest==8.4.2",
+  "httpx==0.28.1",
+  "hypothesis==6.148.7",
+]
+

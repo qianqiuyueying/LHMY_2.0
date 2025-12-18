@@ -1,0 +1,11 @@
+{
+  "venvPath": "..",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "exclude": [
+    "**/__pycache__/**",
+    "**/.hypothesis/**",
+    "**/.pytest_cache/**"
+  ]
+}
+
