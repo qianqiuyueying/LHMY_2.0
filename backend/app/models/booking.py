@@ -16,7 +16,7 @@ from sqlalchemy import Date, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.models.enums import BookingConfirmationMethod, BookingStatus
+from app.models.enums import BookingConfirmationMethod, BookingSourceType, BookingStatus
 
 
 class Booking(Base):
@@ -24,7 +24,18 @@ class Booking(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="预约ID")
 
-    entitlement_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="权益ID")
+    source_type: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=BookingSourceType.ENTITLEMENT.value,
+        comment="来源：ENTITLEMENT/ORDER_ITEM",
+    )
+
+    # v1：权益预约；vNow：允许为空（当 sourceType=ORDER_ITEM 时）
+    entitlement_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, comment="权益ID")
+    order_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, comment="订单ID（ORDER_ITEM 预约）")
+    order_item_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, comment="订单明细ID（ORDER_ITEM 预约）")
+    product_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, comment="商品ID（ORDER_ITEM 预约）")
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="用户ID")
 
     venue_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="场所ID")

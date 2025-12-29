@@ -52,4 +52,3 @@ def decode_and_validate_admin_token(*, token: str) -> dict:
 
 def token_blacklist_key(*, jti: str) -> str:
     return f"admin:token:blacklist:{jti}"
-

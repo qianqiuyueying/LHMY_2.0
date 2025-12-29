@@ -12,24 +12,29 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.models.audit_log import AuditLog
-from app.models.enums import CommonEnabledStatus
+from app.models.enums import AuditAction, AuditActorType, CommonEnabledStatus
 from app.models.system_config import SystemConfig
-from app.utils.db import get_session_factory
-from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
+from app.services.idempotency import IdemActorType, IdempotencyCachedResult, IdempotencyService
 from app.utils.redis_client import get_redis
-from app.utils.response import ok
+from app.utils.db import get_session_factory
+from app.utils.response import fail, ok
+from app.api.v1.deps import require_admin, require_admin_phone_bound
+from app.services.rbac import ActorContext
+from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
 router = APIRouter(tags=["admin-ai"])
 
 _KEY_AI_CONFIG = "AI_CONFIG"
+_OPERATION_PUT_AI_CONFIG = "ADMIN_PUT_AI_CONFIG"
 
 
 def _now_version() -> str:
@@ -45,22 +50,73 @@ def _mask_api_key(api_key: str | None) -> str | None:
     return f"{s[:3]}****{s[-4:]}"
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
+def _require_idempotency_key(idempotency_key: str | None) -> str:
+    if not idempotency_key or not str(idempotency_key).strip():
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "缺少 Idempotency-Key"})
+    return str(idempotency_key).strip()
 
 
-async def _require_admin(authorization: str | None) -> dict:
-    token = _extract_bearer_token(authorization)
-    payload = decode_and_validate_admin_token(token=token)
-    redis = get_redis()
-    if await redis.exists(token_blacklist_key(jti=str(payload["jti"]))):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return payload
+async def _idempotency_replay_if_exists(
+    *,
+    request: Request,
+    operation: str,
+    actor_type: IdemActorType,
+    actor_id: str,
+    idempotency_key: str,
+) -> JSONResponse | None:
+    idem = IdempotencyService(get_redis())
+    cached = await idem.get(operation=operation, actor_type=actor_type, actor_id=actor_id, idempotency_key=idempotency_key)
+    if cached is None:
+        return None
+
+    if cached.success:
+        payload = ok(data=cached.data, request_id=request.state.request_id)
+    else:
+        err = cached.error or {"code": "INTERNAL_ERROR", "message": "服务器内部错误", "details": None}
+        payload = fail(
+            code=str(err.get("code", "INTERNAL_ERROR")),
+            message=str(err.get("message", "服务器内部错误")),
+            details=err.get("details"),
+            request_id=request.state.request_id,
+        )
+    return JSONResponse(status_code=int(cached.status_code), content=payload)
+
+
+def _ai_config_public_view(value_json: dict) -> dict:
+    v = _normalize_value(value_json)
+    return {
+        "enabled": bool(v.get("enabled", False)),
+        "provider": "OPENAI_COMPAT",
+        "baseUrl": str(v.get("baseUrl", "") or ""),
+        "model": str(v.get("model", "") or ""),
+        "systemPrompt": (str(v.get("systemPrompt")) if v.get("systemPrompt") is not None else None),
+        "temperature": (float(v["temperature"]) if v.get("temperature") is not None else None),
+        "maxTokens": (int(v["maxTokens"]) if v.get("maxTokens") is not None else None),
+        "timeoutMs": (int(v["timeoutMs"]) if v.get("timeoutMs") is not None else None),
+        "retries": (int(v["retries"]) if v.get("retries") is not None else None),
+        "rateLimitPerMinute": (int(v["rateLimitPerMinute"]) if v.get("rateLimitPerMinute") is not None else None),
+        "version": str(v.get("version", "")),
+        "apiKeyMasked": _mask_api_key(str(v.get("apiKey", "") or "")),
+    }
+
+
+def _ai_config_audit_view(value_json: dict) -> dict:
+    """用于审计 before/after：禁止包含 apiKey 明文。"""
+    v = _normalize_value(value_json)
+    return {
+        "enabled": bool(v.get("enabled", False)),
+        "provider": "OPENAI_COMPAT",
+        "baseUrl": str(v.get("baseUrl", "") or ""),
+        "model": str(v.get("model", "") or ""),
+        "systemPrompt": str(v.get("systemPrompt", "") or ""),
+        "temperature": float(v.get("temperature", 0.7)),
+        "maxTokens": int(v.get("maxTokens", 1024)),
+        "timeoutMs": int(v.get("timeoutMs", 15000)),
+        "retries": int(v.get("retries", 1)),
+        "rateLimitPerMinute": int(v.get("rateLimitPerMinute", 30)),
+        "version": str(v.get("version", "")),
+    }
+
 
 
 async def _get_or_create_ai_config(session) -> SystemConfig:
@@ -101,7 +157,9 @@ def _parse_dt(raw: str, *, field_name: str) -> datetime:
             return datetime.fromisoformat(raw + "T00:00:00")
         return datetime.fromisoformat(raw)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}) from exc
+        raise HTTPException(
+            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}
+        ) from exc
 
 
 def _normalize_value(value: dict) -> dict:
@@ -140,102 +198,202 @@ class AdminAiConfigResp(BaseModel):
 @router.get("/admin/ai/config")
 async def admin_get_ai_config(
     request: Request,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_ai_config(session)
-        v = _normalize_value(cfg.value_json)
-
-    data = AdminAiConfigResp(
-        enabled=bool(v.get("enabled", False)),
-        provider="OPENAI_COMPAT",
-        baseUrl=str(v.get("baseUrl", "") or ""),
-        model=str(v.get("model", "") or ""),
-        systemPrompt=(str(v.get("systemPrompt")) if v.get("systemPrompt") is not None else None),
-        temperature=(float(v["temperature"]) if v.get("temperature") is not None else None),
-        maxTokens=(int(v["maxTokens"]) if v.get("maxTokens") is not None else None),
-        timeoutMs=(int(v["timeoutMs"]) if v.get("timeoutMs") is not None else None),
-        retries=(int(v["retries"]) if v.get("retries") is not None else None),
-        rateLimitPerMinute=(int(v["rateLimitPerMinute"]) if v.get("rateLimitPerMinute") is not None else None),
-        version=str(v.get("version", "")),
-        apiKeyMasked=_mask_api_key(str(v.get("apiKey", "") or "")),
-    ).model_dump()
+        data = AdminAiConfigResp(**_ai_config_public_view(cfg.value_json)).model_dump()
 
     return ok(data=data, request_id=request.state.request_id)
-
-
-class AdminPutAiConfigBody(BaseModel):
-    enabled: bool | None = None
-    provider: Literal["OPENAI_COMPAT"] | None = None
-    baseUrl: str | None = None
-    apiKey: str | None = None
-    model: str | None = None
-    systemPrompt: str | None = None
-    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
-    maxTokens: int | None = Field(default=None, ge=1, le=200000)
-    timeoutMs: int | None = Field(default=None, ge=100, le=120000)
-    retries: int | None = Field(default=None, ge=0, le=10)
-    rateLimitPerMinute: int | None = Field(default=None, ge=1, le=100000)
-
 
 @router.put("/admin/ai/config")
 async def admin_put_ai_config(
     request: Request,
-    body: AdminPutAiConfigBody,
-    authorization: str | None = Header(default=None),
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _admin: ActorContext = Depends(require_admin_phone_bound),
 ):
-    await _require_admin(authorization)
+    admin_id = str(_admin.sub)
+    idem_key = _require_idempotency_key(idempotency_key)
+    replay = await _idempotency_replay_if_exists(
+        request=request,
+        operation=_OPERATION_PUT_AI_CONFIG,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+    )
+    if replay is not None:
+        return replay
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "body 必须是 JSON 对象"})
 
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_ai_config(session)
-        v = _normalize_value(cfg.value_json)
+        before_raw = _normalize_value(cfg.value_json)
+        before_audit = _ai_config_audit_view(before_raw)
+        v = dict(before_raw)
+
+        def _opt_bool(field: str) -> bool | None:
+            if field not in body:
+                return None
+            val = body.get(field)
+            if val is None:
+                return None
+            if isinstance(val, bool):
+                return val
+            raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 必须是 boolean"})
+
+        def _opt_str(field: str) -> str | None:
+            if field not in body:
+                return None
+            val = body.get(field)
+            if val is None:
+                return None
+            if not isinstance(val, str):
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 必须是 string"})
+            return val
+
+        def _opt_int(field: str, *, ge: int, le: int) -> int | None:
+            if field not in body:
+                return None
+            val = body.get(field)
+            if val is None:
+                return None
+            if isinstance(val, bool) or not isinstance(val, (int, float)):
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 必须是 number"})
+            n = int(val)
+            if n < ge or n > le:
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 范围不合法"})
+            return n
+
+        def _opt_float(field: str, *, ge: float, le: float) -> float | None:
+            if field not in body:
+                return None
+            val = body.get(field)
+            if val is None:
+                return None
+            if isinstance(val, bool) or not isinstance(val, (int, float)):
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 必须是 number"})
+            n = float(val)
+            if n < ge or n > le:
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 范围不合法"})
+            return n
 
         # provider v1 固定 OPENAI_COMPAT
-        if body.provider is not None and body.provider != "OPENAI_COMPAT":
+        provider = _opt_str("provider")
+        if provider is not None and provider.strip() and provider.strip() != "OPENAI_COMPAT":
             raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "provider 不支持"})
 
-        def _strip(s: str | None) -> str | None:
-            if s is None:
-                return None
-            return s.strip()
+        enabled = _opt_bool("enabled")
+        base_url = _opt_str("baseUrl")
+        model = _opt_str("model")
+        system_prompt = _opt_str("systemPrompt")
+        temperature = _opt_float("temperature", ge=0.0, le=2.0)
+        max_tokens = _opt_int("maxTokens", ge=1, le=200000)
+        timeout_ms = _opt_int("timeoutMs", ge=100, le=120000)
+        retries = _opt_int("retries", ge=0, le=10)
+        rate_limit = _opt_int("rateLimitPerMinute", ge=1, le=100000)
+        api_key_raw = _opt_str("apiKey")
 
-        if body.enabled is not None:
-            v["enabled"] = bool(body.enabled)
-        if body.baseUrl is not None:
-            v["baseUrl"] = _strip(body.baseUrl) or ""
-        if body.model is not None:
-            v["model"] = _strip(body.model) or ""
-        if body.systemPrompt is not None:
-            v["systemPrompt"] = body.systemPrompt
-        if body.temperature is not None:
-            v["temperature"] = float(body.temperature)
-        if body.maxTokens is not None:
-            v["maxTokens"] = int(body.maxTokens)
-        if body.timeoutMs is not None:
-            v["timeoutMs"] = int(body.timeoutMs)
-        if body.retries is not None:
-            v["retries"] = int(body.retries)
-        if body.rateLimitPerMinute is not None:
-            v["rateLimitPerMinute"] = int(body.rateLimitPerMinute)
+        changed_fields: list[str] = []
+        api_key_updated = False
 
-        # apiKey：允许可选更新；空字符串视为“不更新”
-        if body.apiKey is not None:
-            key = body.apiKey.strip()
+        if enabled is not None and bool(enabled) != bool(v.get("enabled", False)):
+            v["enabled"] = bool(enabled)
+            changed_fields.append("enabled")
+        if base_url is not None:
+            new_val = base_url.strip()
+            if new_val != str(v.get("baseUrl", "") or ""):
+                v["baseUrl"] = new_val
+                changed_fields.append("baseUrl")
+        if model is not None:
+            new_val = model.strip()
+            if new_val != str(v.get("model", "") or ""):
+                v["model"] = new_val
+                changed_fields.append("model")
+        if system_prompt is not None:
+            if system_prompt != str(v.get("systemPrompt", "") or ""):
+                v["systemPrompt"] = system_prompt
+                changed_fields.append("systemPrompt")
+        if temperature is not None and float(temperature) != float(v.get("temperature", 0.7)):
+            v["temperature"] = float(temperature)
+            changed_fields.append("temperature")
+        if max_tokens is not None and int(max_tokens) != int(v.get("maxTokens", 1024)):
+            v["maxTokens"] = int(max_tokens)
+            changed_fields.append("maxTokens")
+        if timeout_ms is not None and int(timeout_ms) != int(v.get("timeoutMs", 15000)):
+            v["timeoutMs"] = int(timeout_ms)
+            changed_fields.append("timeoutMs")
+        if retries is not None and int(retries) != int(v.get("retries", 1)):
+            v["retries"] = int(retries)
+            changed_fields.append("retries")
+        if rate_limit is not None and int(rate_limit) != int(v.get("rateLimitPerMinute", 30)):
+            v["rateLimitPerMinute"] = int(rate_limit)
+            changed_fields.append("rateLimitPerMinute")
+
+        # apiKey：允许可选更新；空字符串视为“不更新”；同值更新视为 no-op
+        if api_key_raw is not None:
+            key = api_key_raw.strip()
             if key:
-                v["apiKey"] = key
+                before_key = str(v.get("apiKey", "") or "")
+                if key != before_key:
+                    v["apiKey"] = key
+                    changed_fields.append("apiKey")
+                    api_key_updated = True
 
-        # 写入新版本号
-        v["version"] = _now_version()
+        if changed_fields:
+            # 版本号：仅在“实际变更”时变化；避免同秒内更新产生相同 version
+            new_version = _now_version()
+            if str(v.get("version", "")) == str(new_version):
+                try:
+                    new_version = str(int(new_version) + 1)
+                except Exception:  # noqa: BLE001
+                    new_version = f"{new_version}-1"
+            v["version"] = new_version
+            after_audit = _ai_config_audit_view(v)
 
-        cfg.value_json = v
-        await session.commit()
+            cfg.value_json = v
+            session.add(
+                AuditLog(
+                    id=str(uuid4()),
+                    actor_type=AuditActorType.ADMIN.value,
+                    actor_id=admin_id,
+                    action=AuditAction.UPDATE.value,
+                    resource_type="AI_CONFIG",
+                    resource_id=_KEY_AI_CONFIG,
+                    summary="ADMIN 更新 AI 配置",
+                    ip=getattr(getattr(request, "client", None), "host", None),
+                    user_agent=request.headers.get("User-Agent"),
+                    metadata_json={
+                        "requestId": request.state.request_id,
+                        "resourceKey": _KEY_AI_CONFIG,
+                        "changedFields": changed_fields,
+                        "apiKeyUpdated": api_key_updated,
+                        "before": before_audit,
+                        "after": after_audit,
+                    },
+                )
+            )
+            await session.commit()
+        else:
+            # no-op：不 bump version，不写审计
+            await session.commit()
 
-    # 返回脱敏后的配置
-    return await admin_get_ai_config(request=request, authorization=authorization)
+    data = AdminAiConfigResp(**_ai_config_public_view(v)).model_dump()
+    payload = ok(data=data, request_id=request.state.request_id)
+    await IdempotencyService(get_redis()).set(
+        operation=_OPERATION_PUT_AI_CONFIG,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+        result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
+    )
+    return payload
 
 
 # -----------------------------
@@ -246,7 +404,7 @@ async def admin_put_ai_config(
 @router.get("/admin/ai/audit-logs")
 async def admin_list_ai_audit_logs(
     request: Request,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
     userId: str | None = None,
     resultStatus: Literal["success", "fail"] | None = None,
     provider: str | None = None,
@@ -256,7 +414,7 @@ async def admin_list_ai_audit_logs(
     page: int = 1,
     pageSize: int = 20,
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     page = max(1, int(page))
     page_size = max(1, min(100, int(pageSize)))
@@ -311,4 +469,3 @@ async def admin_list_ai_audit_logs(
         data={"items": items, "page": page, "pageSize": page_size, "total": total},
         request_id=request.state.request_id,
     )
-

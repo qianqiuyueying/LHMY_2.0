@@ -40,10 +40,19 @@ class UserEnterpriseBindingStatus(StrEnum):
 
 
 class ProductFulfillmentType(StrEnum):
-    """商品履约类型（v1：不支持实物）。"""
+    """商品履约类型（v2：到店服务 + 物流商品）。"""
 
-    VIRTUAL_VOUCHER = "VIRTUAL_VOUCHER"
     SERVICE = "SERVICE"
+    PHYSICAL_GOODS = "PHYSICAL_GOODS"
+
+
+class OrderFulfillmentStatus(StrEnum):
+    """物流履约状态（仅用于 PHYSICAL_GOODS）。"""
+
+    NOT_SHIPPED = "NOT_SHIPPED"
+    SHIPPED = "SHIPPED"
+    DELIVERED = "DELIVERED"
+    RECEIVED = "RECEIVED"
 
 
 class ProductStatus(StrEnum):
@@ -68,13 +77,15 @@ class TaxonomyType(StrEnum):
     VENUE = "VENUE"
     PRODUCT = "PRODUCT"
     CONTENT = "CONTENT"
+    PRODUCT_TAG = "PRODUCT_TAG"
+    SERVICE_TAG = "SERVICE_TAG"
+    VENUE_TAG = "VENUE_TAG"
 
 
 class OrderType(StrEnum):
     """订单类型（v1 最小可执行）。"""
 
     PRODUCT = "PRODUCT"
-    VIRTUAL_VOUCHER = "VIRTUAL_VOUCHER"
     SERVICE_PACKAGE = "SERVICE_PACKAGE"
 
 
@@ -82,7 +93,6 @@ class OrderItemType(StrEnum):
     """订单明细类型。"""
 
     PRODUCT = "PRODUCT"
-    VIRTUAL_VOUCHER = "VIRTUAL_VOUCHER"
     SERVICE_PACKAGE = "SERVICE_PACKAGE"
 
 
@@ -150,7 +160,6 @@ class ServicePackageInstanceStatus(StrEnum):
 class EntitlementType(StrEnum):
     """权益类型。"""
 
-    VOUCHER = "VOUCHER"
     SERVICE_PACKAGE = "SERVICE_PACKAGE"
 
 
@@ -169,6 +178,7 @@ class RedemptionMethod(StrEnum):
 
     QR_CODE = "QR_CODE"
     VOUCHER_CODE = "VOUCHER_CODE"
+    BOTH = "BOTH"
 
 
 class RedemptionStatus(StrEnum):
@@ -184,6 +194,15 @@ class VenuePublishStatus(StrEnum):
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
     OFFLINE = "OFFLINE"
+
+
+class VenueReviewStatus(StrEnum):
+    """场所展示资料审核状态（v1+：用于区分“草稿/待审/通过/驳回”，不等同于 publish_status）。"""
+
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
 
 
 class BookingStatus(StrEnum):
@@ -202,6 +221,13 @@ class BookingConfirmationMethod(StrEnum):
     MANUAL = "MANUAL"
 
 
+class BookingSourceType(StrEnum):
+    """预约来源类型（vNow：支持权益预约 + 基建联防服务商品订单预约）。"""
+
+    ENTITLEMENT = "ENTITLEMENT"
+    ORDER_ITEM = "ORDER_ITEM"
+
+
 class DealerStatus(StrEnum):
     """经销商状态（v1）。"""
 
@@ -215,6 +241,22 @@ class DealerLinkStatus(StrEnum):
     ENABLED = "ENABLED"
     DISABLED = "DISABLED"
     EXPIRED = "EXPIRED"
+
+
+class ProviderInfraCommerceStatus(StrEnum):
+    """服务提供方：基建联防开通状态（v1）。"""
+
+    NOT_OPENED = "NOT_OPENED"
+    OPENED = "OPENED"
+
+
+class ProviderHealthCardStatus(StrEnum):
+    """服务提供方：健行天下供给开通状态（v1）。"""
+
+    NOT_APPLIED = "NOT_APPLIED"
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
 
 
 class SettlementStatus(StrEnum):
@@ -242,6 +284,14 @@ class NotificationStatus(StrEnum):
     READ = "READ"
 
 
+class NotificationCategory(StrEnum):
+    """通知类别（用于接收端展示/筛选，v1 最小）。"""
+
+    SYSTEM = "SYSTEM"
+    ACTIVITY = "ACTIVITY"
+    OPS = "OPS"
+
+
 class AuditActorType(StrEnum):
     """审计操作者类型。"""
 
@@ -267,6 +317,14 @@ class AuditAction(StrEnum):
 
 class CmsContentStatus(StrEnum):
     """CMS 内容状态。"""
+
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    OFFLINE = "OFFLINE"
+
+
+class LegalAgreementStatus(StrEnum):
+    """协议/条款状态（v1 最小）。"""
 
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"

@@ -1,0 +1,36 @@
+<!-- pages/profile/profile-edit/profile-edit.wxml -->
+<view class="container">
+  <view class="card">
+    <view class="row">
+      <text class="label">头像</text>
+      <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+        <image class="avatar" src="{{avatarPreview || userInfo.avatar || '/images/default-avatar.png'}}" mode="aspectFill"></image>
+      </button>
+    </view>
+
+    <view class="row">
+      <text class="label">昵称</text>
+      <input class="input" type="nickname" value="{{nicknameDraft}}" placeholder="请输入昵称" bindinput="onNicknameInput" />
+    </view>
+
+    <view class="row">
+      <text class="label">手机号</text>
+      <view class="right">
+        <text class="value">{{userInfo.phone || '未绑定'}}</text>
+        <button wx:if="{{!userInfo.phone}}" class="mini-action" bindtap="onBindPhone">去绑定</button>
+      </view>
+    </view>
+
+    <view class="row">
+      <text class="label">企业/员工身份</text>
+      <view class="right">
+        <text class="value">{{userInfo.enterpriseName || (isEmployee ? '已绑定' : '未绑定')}}</text>
+        <button class="mini-action" bindtap="onEnterpriseBind">去绑定</button>
+      </view>
+    </view>
+  </view>
+
+  <button class="save-btn" bindtap="onSave" loading="{{saving}}" disabled="{{saving}}">保存</button>
+</view>
+
+

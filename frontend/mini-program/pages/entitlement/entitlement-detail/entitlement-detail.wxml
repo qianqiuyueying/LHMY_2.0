@@ -1,0 +1,47 @@
+<!--pages/entitlement/entitlement-detail/entitlement-detail.wxml-->
+<view class="container" wx:if="{{!loading && entitlement}}">
+  <view class="card">
+    <view class="info-row">
+      <text class="label">服务类别</text>
+      <text class="value">{{entitlement.serviceType}}</text>
+    </view>
+    <view class="info-row">
+      <text class="label">剩余/总次数</text>
+      <text class="value">{{entitlement.remainingCount}}/{{entitlement.totalCount}}</text>
+    </view>
+    <view class="info-row">
+      <text class="label">有效期</text>
+      <text class="value">{{entitlement.validFrom}} ~ {{entitlement.validUntil}}</text>
+    </view>
+    <view class="info-row" wx:if="{{entitlement.applicableRegions}}">
+      <text class="label">适用范围</text>
+      <text class="value">{{entitlement.applicableRegions}}</text>
+    </view>
+  </view>
+
+  <!-- 核销形态 -->
+  <view class="card">
+    <view class="section-title">核销形态</view>
+    <view class="qr-code-section">
+      <image class="qr-code-image" src="{{qrCodeImage ? qrCodeImage : '/images/qr-placeholder.png'}}" mode="aspectFit"></image>
+      <text class="qr-code-hint">{{qrHint}}</text>
+      <button class="qr-retry-btn" wx:if="{{qrState === 'error'}}" bindtap="onRetryQr">重试生成</button>
+      <!-- 隐藏 canvas：用于将 payload 渲染为二维码图片 -->
+      <canvas canvas-id="qrCanvas" class="qr-canvas"></canvas>
+    </view>
+    <view class="voucher-code-section">
+      <text class="voucher-code-label">券码：</text>
+      <text class="voucher-code-value">{{entitlement.voucherCode}}</text>
+      <button class="copy-btn" bindtap="onCopyVoucherCode">复制</button>
+    </view>
+  </view>
+
+  <!-- 操作按钮 -->
+  <view class="bottom-cta-bar is-split">
+    <button class="btn btn-ghost" bindtap="onViewVenues" wx:if="{{entitlement.status === 'ACTIVE'}}">查看适用场所</button>
+    <button class="btn btn-primary" bindtap="onGoBooking" wx:if="{{entitlement.status === 'ACTIVE'}}">去预约</button>
+
+    <!-- 非 ACTIVE：只保留一个主行动 -->
+    <button class="btn btn-primary" bindtap="onViewVenues" wx:elif="{{entitlement.status !== 'ACTIVE'}}">查看适用场所</button>
+  </view>
+</view>

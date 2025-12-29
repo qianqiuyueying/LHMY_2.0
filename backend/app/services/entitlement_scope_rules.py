@@ -6,7 +6,6 @@
 - specs/health-services-platform/tasks.md -> 阶段5-33
 
 v1 最小口径：
-- 基建联防权益（entitlementType=VOUCHER）：全平台通用（不做区域限制）
 - 健行天下权益（entitlementType=SERVICE_PACKAGE）：必须匹配 applicableRegions（区域限制）
 """
 
@@ -71,10 +70,6 @@ def is_entitlement_eligible_for_venue(
     if applicable_venues is not None and len(applicable_venues) > 0 and venue_id not in applicable_venues:
         return False
 
-    # 基建联防：全平台通用
-    if entitlement_type == EntitlementType.VOUCHER.value:
-        return True
-
     # 健行天下：区域限制
     if entitlement_type == EntitlementType.SERVICE_PACKAGE.value:
         if not applicable_regions:
@@ -91,4 +86,3 @@ def is_entitlement_eligible_for_venue(
 
     # 未知类型：保守拒绝
     return False
-

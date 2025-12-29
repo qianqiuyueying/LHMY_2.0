@@ -28,4 +28,3 @@ def test_property_17_manual_confirmation_creates_pending_booking():
     assert state.confirmation_method == BookingConfirmationMethod.MANUAL.value
     assert state.status == BookingStatus.PENDING.value
     assert state.confirmed_at is None
-

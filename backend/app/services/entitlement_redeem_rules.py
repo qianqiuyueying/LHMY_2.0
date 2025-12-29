@@ -8,7 +8,6 @@
 口径（v1）：
 - 仅当核销成功时才扣次数/作废
 - 次数权益（SERVICE_PACKAGE）：remainingCount 递减；remainingCount==0 时置为 USED
-- 虚拟券（VOUCHER）：核销成功直接置为 USED（remainingCount 可置 0）
 """
 
 from __future__ import annotations
@@ -36,9 +35,6 @@ def apply_redeem(
     if not success:
         return RedeemResult(remaining_count=remaining_count, status=EntitlementStatus.ACTIVE.value)
 
-    if entitlement_type == EntitlementType.VOUCHER.value:
-        return RedeemResult(remaining_count=0, status=EntitlementStatus.USED.value)
-
     if entitlement_type == EntitlementType.SERVICE_PACKAGE.value:
         new_remaining = max(0, remaining_count - 1)
         new_status = EntitlementStatus.USED.value if new_remaining == 0 else EntitlementStatus.ACTIVE.value
@@ -46,4 +42,3 @@ def apply_redeem(
 
     # 未知类型：保守不改
     return RedeemResult(remaining_count=remaining_count, status=EntitlementStatus.ACTIVE.value)
-

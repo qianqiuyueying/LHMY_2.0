@@ -21,4 +21,3 @@ def compute_settlement_cycle_monthly(*, dt: datetime) -> str:
     """
 
     return f"{dt.year:04d}-{dt.month:02d}"
-

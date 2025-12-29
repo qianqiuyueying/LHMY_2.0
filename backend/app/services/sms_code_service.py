@@ -2,7 +2,8 @@
 
 规格来源：
 - specs/health-services-platform/design.md -> 「短信验证码（H5 购买 + 小程序绑定手机号，v1 最小可执行口径）」
-- specs/health-services-platform/design.md -> 附录 A：错误码（INVALID_PHONE / RATE_LIMITED / SMS_CODE_INVALID / SMS_CODE_EXPIRED）
+- specs/health-services-platform/design.md -> 附录 A：错误码
+  - INVALID_PHONE / RATE_LIMITED / SMS_CODE_INVALID / SMS_CODE_EXPIRED
 - specs/health-services-platform/tasks.md -> 阶段3-14
 
 说明：

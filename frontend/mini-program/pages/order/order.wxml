@@ -1,0 +1,83 @@
+<!--pages/order/order.wxml-->
+<view class="container">
+  <!-- Tab栏 -->
+  <view class="tabs">
+    <view 
+      class="tab-item {{currentTab === 'all' ? 'active' : ''}}"
+      data-tab="all"
+      bindtap="onTabTap"
+    >
+      全部
+    </view>
+    <view 
+      class="tab-item {{currentTab === 'pending' ? 'active' : ''}}"
+      data-tab="pending"
+      bindtap="onTabTap"
+    >
+      待支付
+    </view>
+    <view 
+      class="tab-item {{currentTab === 'paid' ? 'active' : ''}}"
+      data-tab="paid"
+      bindtap="onTabTap"
+    >
+      已支付
+    </view>
+    <view 
+      class="tab-item {{currentTab === 'refunded' ? 'active' : ''}}"
+      data-tab="refunded"
+      bindtap="onTabTap"
+    >
+      已退款
+    </view>
+  </view>
+
+  <!-- 类型筛选 -->
+  <view class="type-filters">
+    <view
+      class="type-chip {{currentType === 'all' ? 'active' : ''}}"
+      data-type="all"
+      bindtap="onTypeTap"
+    >全部类型</view>
+    <view
+      class="type-chip {{currentType === 'PRODUCT' ? 'active' : ''}}"
+      data-type="PRODUCT"
+      bindtap="onTypeTap"
+    >商品/服务订单</view>
+    <view
+      class="type-chip {{currentType === 'SERVICE_PACKAGE' ? 'active' : ''}}"
+      data-type="SERVICE_PACKAGE"
+      bindtap="onTypeTap"
+    >服务包订单</view>
+  </view>
+
+  <!-- 订单列表 -->
+  <view class="orders-list">
+    <view 
+      class="order-card card"
+      wx:for="{{orders}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onOrderTap"
+    >
+      <view class="order-header">
+        <text class="order-no">订单号：{{item.orderNo}}</text>
+        <text class="order-status">{{item.paymentStatus === 'PENDING' ? '待支付' : item.paymentStatus === 'PAID' ? '已支付' : item.paymentStatus === 'REFUNDED' ? '已退款' : '未知状态'}}</text>
+      </view>
+      <view class="order-type">
+        <text>{{item.orderType === 'PRODUCT' ? '商品订单' : '服务包订单'}}</text>
+      </view>
+      <view class="order-amount">
+        <text class="amount-label">订单金额：</text>
+        <text class="amount-value">¥{{item.totalAmount}}</text>
+      </view>
+      <view class="order-time">
+        <text>下单时间：{{item.createdAt}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty-state" wx:if="{{!loading && orders.length === 0}}">
+    <text>暂无订单</text>
+  </view>
+</view>

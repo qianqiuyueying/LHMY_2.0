@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import DateTime, String
+from sqlalchemy.dialects.mysql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -35,6 +36,13 @@ class SettlementRecord(Base):
         default=SettlementStatus.PENDING_CONFIRM.value,
         comment="状态：PENDING_CONFIRM/SETTLED/FROZEN",
     )
+
+    payout_method: Mapped[str | None] = mapped_column(String(16), nullable=True, comment="打款方式快照：BANK/ALIPAY")
+    payout_account_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="打款账户快照（JSON）")
+    payout_reference: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="打款流水号/参考号")
+    payout_note: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="打款备注")
+    payout_marked_by: Mapped[str | None] = mapped_column(String(36), nullable=True, comment="标记打款的管理员ID")
+    payout_marked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="标记打款时间")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="结算完成时间")

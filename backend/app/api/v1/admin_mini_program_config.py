@@ -25,45 +25,55 @@
 
 from __future__ import annotations
 
+import json
 import time
+from copy import deepcopy
 from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
-from app.models.enums import CommonEnabledStatus
+from app.api.v1.deps import require_admin, require_admin_phone_bound
+from app.models.audit_log import AuditLog
+from app.models.enums import AuditAction, AuditActorType, CommonEnabledStatus
+from app.models.enums import ProductStatus, VenuePublishStatus
+from app.models.product import Product
 from app.models.system_config import SystemConfig
+from app.models.venue import Venue
+from app.services.rbac import ActorContext
 from app.utils.db import get_session_factory
-from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
-from app.utils.redis_client import get_redis
 from app.utils.response import ok
+from app.utils.settings import settings
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["admin-mini-program-config"])
 
 _KEY_ENTRIES = "MINI_PROGRAM_ENTRIES"
 _KEY_PAGES = "MINI_PROGRAM_PAGES"
 _KEY_COLLECTIONS = "MINI_PROGRAM_COLLECTIONS"
+_KEY_HOME_RECOMMENDED_VENUES = "MINI_PROGRAM_HOME_RECOMMENDED_VENUES"
+_KEY_HOME_RECOMMENDED_PRODUCTS = "MINI_PROGRAM_HOME_RECOMMENDED_PRODUCTS"
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
+def _ensure_json_serializable(value: Any, *, field_name: str) -> None:
+    """REQ-P2-006：配置验证与格式化（最小）。
 
+    口径：
+    - 只做“能否序列化为 JSON”的校验，避免写入不可序列化对象导致后续读侧异常。
+    - 不改变接口返回结构；仅在写入前拒绝非法配置。
+    """
 
-async def _require_admin(authorization: str | None) -> dict:
-    token = _extract_bearer_token(authorization)
-    payload = decode_and_validate_admin_token(token=token)
-    redis = get_redis()
-    if await redis.exists(token_blacklist_key(jti=str(payload["jti"]))):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return payload
+    try:
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 不是合法 JSON"},
+        ) from exc
 
 
 def _now_version() -> str:
@@ -71,10 +81,31 @@ def _now_version() -> str:
     return str(int(time.time()))
 
 
-def _iso(dt: datetime | None) -> str | None:
-    if dt is None:
-        return None
-    return dt.astimezone().isoformat()
+def _audit_mini_program_config(
+    *,
+    request: Request,
+    admin_id: str,
+    action: str,
+    resource_id: str,
+    meta: dict[str, Any] | None = None,
+) -> AuditLog:
+    return AuditLog(
+        id=str(uuid4()),
+        actor_type=AuditActorType.ADMIN.value,
+        actor_id=admin_id,
+        action=action,
+        resource_type="MINI_PROGRAM_CONFIG",
+        resource_id=resource_id,
+        summary=f"ADMIN 更新小程序配置：{resource_id}",
+        ip=getattr(getattr(request, "client", None), "host", None),
+        user_agent=request.headers.get("User-Agent"),
+        metadata_json={
+            "path": request.url.path,
+            "method": request.method,
+            "requestId": request.state.request_id,
+            **(meta or {}),
+        },
+    )
 
 
 async def _get_or_create_config(session, key: str) -> SystemConfig:
@@ -95,6 +126,230 @@ async def _get_or_create_config(session, key: str) -> SystemConfig:
     return cfg
 
 
+def _set_value_json(cfg: SystemConfig, value: dict) -> None:
+    """确保 JSON 字段变更能被 SQLAlchemy 追踪并落库。
+
+    背景：MySQL JSON 字段默认不会追踪 dict 的就地变更；若直接复用同一个 dict 对象，
+    可能出现“接口 200 但刷新后数据没变”的假象（运营侧体验灾难）。
+    """
+
+    cfg.value_json = deepcopy(value or {})
+    flag_modified(cfg, "value_json")
+
+
+# -----------------------------
+# home recommendations (venues/products)
+# -----------------------------
+
+
+class RecommendedVenueItem(BaseModel):
+    venueId: str = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def _trim(self):
+        self.venueId = str(self.venueId or "").strip()
+        if not self.venueId:
+            raise ValueError("venueId 不能为空")
+        return self
+
+
+class PutHomeRecommendedVenuesBody(BaseModel):
+    enabled: bool = True
+    items: list[RecommendedVenueItem] = Field(default_factory=list)
+    version: str | None = None
+
+
+@router.get("/admin/mini-program/home/recommended-venues")
+async def admin_get_mp_home_recommended_venues(request: Request, _admin=Depends(require_admin)):
+    _ = _admin
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        cfg = (
+            await session.scalars(select(SystemConfig).where(SystemConfig.key == _KEY_HOME_RECOMMENDED_VENUES).limit(1))
+        ).first()
+        raw = cfg.value_json if cfg else None
+        enabled = (cfg.status == CommonEnabledStatus.ENABLED.value) if cfg else False
+
+        version = "0"
+        items = []
+        if isinstance(raw, dict):
+            version = str(raw.get("version") or "0")
+            items = raw.get("items") or []
+
+        venue_ids: list[str] = []
+        for x in items:
+            if isinstance(x, dict) and x.get("venueId"):
+                venue_ids.append(str(x.get("venueId")))
+
+        venues = (await session.scalars(select(Venue).where(Venue.id.in_(venue_ids)))).all() if venue_ids else []
+        by_id = {v.id: v for v in venues}
+
+    out_items: list[dict] = []
+    for vid in venue_ids:
+        v = by_id.get(vid)
+        out_items.append(
+            {
+                "venueId": vid,
+                "name": v.name if v else "",
+                "publishStatus": v.publish_status if v else "NOT_FOUND",
+            }
+        )
+    return ok(data={"enabled": enabled, "items": out_items, "version": version}, request_id=request.state.request_id)
+
+
+@router.put("/admin/mini-program/home/recommended-venues")
+async def admin_put_mp_home_recommended_venues(
+    request: Request, body: PutHomeRecommendedVenuesBody, _admin: ActorContext = Depends(require_admin_phone_bound)
+):
+    _ensure_json_serializable(body.model_dump(), field_name="body")
+    admin_id = str(_admin.sub)
+
+    venue_ids = [x.venueId for x in (body.items or [])]
+    seen: set[str] = set()
+    for vid in venue_ids:
+        if vid in seen:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"重复的 venueId：{vid}"})
+        seen.add(vid)
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        if venue_ids:
+            venues = (await session.scalars(select(Venue).where(Venue.id.in_(venue_ids)))).all()
+            by_id = {v.id: v for v in venues}
+            for vid in venue_ids:
+                v = by_id.get(vid)
+                if v is None:
+                    raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"场所不存在：{vid}"})
+                if v.publish_status != VenuePublishStatus.PUBLISHED.value:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={"code": "INVALID_ARGUMENT", "message": f"场所未发布，不能推荐：{vid}（{v.publish_status}）"},
+                    )
+
+        cfg = await _get_or_create_config(session, _KEY_HOME_RECOMMENDED_VENUES)
+        before_version = str((cfg.value_json or {}).get("version") or "0")
+        value = {"version": _now_version(), "items": [{"venueId": x} for x in venue_ids]}
+        _set_value_json(cfg, value)
+        cfg.status = CommonEnabledStatus.ENABLED.value if body.enabled else CommonEnabledStatus.DISABLED.value
+        session.add(
+            _audit_mini_program_config(
+                request=request,
+                admin_id=admin_id,
+                action=AuditAction.UPDATE.value,
+                resource_id=_KEY_HOME_RECOMMENDED_VENUES,
+                meta={"key": _KEY_HOME_RECOMMENDED_VENUES, "beforeVersion": before_version, "afterVersion": value["version"]},
+            )
+        )
+        await session.commit()
+
+    value["enabled"] = body.enabled
+    return ok(data=value, request_id=request.state.request_id)
+
+
+class RecommendedProductItem(BaseModel):
+    productId: str = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def _trim(self):
+        self.productId = str(self.productId or "").strip()
+        if not self.productId:
+            raise ValueError("productId 不能为空")
+        return self
+
+
+class PutHomeRecommendedProductsBody(BaseModel):
+    enabled: bool = True
+    items: list[RecommendedProductItem] = Field(default_factory=list)
+    version: str | None = None
+
+
+@router.get("/admin/mini-program/home/recommended-products")
+async def admin_get_mp_home_recommended_products(request: Request, _admin=Depends(require_admin)):
+    _ = _admin
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        cfg = (
+            await session.scalars(select(SystemConfig).where(SystemConfig.key == _KEY_HOME_RECOMMENDED_PRODUCTS).limit(1))
+        ).first()
+        raw = cfg.value_json if cfg else None
+        enabled = (cfg.status == CommonEnabledStatus.ENABLED.value) if cfg else False
+
+        version = "0"
+        items = []
+        if isinstance(raw, dict):
+            version = str(raw.get("version") or "0")
+            items = raw.get("items") or []
+
+        product_ids: list[str] = []
+        for x in items:
+            if isinstance(x, dict) and x.get("productId"):
+                product_ids.append(str(x.get("productId")))
+
+        products = (await session.scalars(select(Product).where(Product.id.in_(product_ids)))).all() if product_ids else []
+        by_id = {p.id: p for p in products}
+
+    out_items: list[dict] = []
+    for pid in product_ids:
+        p = by_id.get(pid)
+        out_items.append(
+            {
+                "productId": pid,
+                "title": p.title if p else "",
+                "status": p.status if p else "NOT_FOUND",
+            }
+        )
+    return ok(data={"enabled": enabled, "items": out_items, "version": version}, request_id=request.state.request_id)
+
+
+@router.put("/admin/mini-program/home/recommended-products")
+async def admin_put_mp_home_recommended_products(
+    request: Request, body: PutHomeRecommendedProductsBody, _admin: ActorContext = Depends(require_admin_phone_bound)
+):
+    _ensure_json_serializable(body.model_dump(), field_name="body")
+    admin_id = str(_admin.sub)
+
+    product_ids = [x.productId for x in (body.items or [])]
+    seen: set[str] = set()
+    for pid in product_ids:
+        if pid in seen:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"重复的 productId：{pid}"})
+        seen.add(pid)
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        if product_ids:
+            products = (await session.scalars(select(Product).where(Product.id.in_(product_ids)))).all()
+            by_id = {p.id: p for p in products}
+            for pid in product_ids:
+                p = by_id.get(pid)
+                if p is None:
+                    raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"商品不存在：{pid}"})
+                if p.status != ProductStatus.ON_SALE.value:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={"code": "INVALID_ARGUMENT", "message": f"商品未上架，不能推荐：{pid}（{p.status}）"},
+                    )
+
+        cfg = await _get_or_create_config(session, _KEY_HOME_RECOMMENDED_PRODUCTS)
+        before_version = str((cfg.value_json or {}).get("version") or "0")
+        value = {"version": _now_version(), "items": [{"productId": x} for x in product_ids]}
+        _set_value_json(cfg, value)
+        cfg.status = CommonEnabledStatus.ENABLED.value if body.enabled else CommonEnabledStatus.DISABLED.value
+        session.add(
+            _audit_mini_program_config(
+                request=request,
+                admin_id=admin_id,
+                action=AuditAction.UPDATE.value,
+                resource_id=_KEY_HOME_RECOMMENDED_PRODUCTS,
+                meta={"key": _KEY_HOME_RECOMMENDED_PRODUCTS, "beforeVersion": before_version, "afterVersion": value["version"]},
+            )
+        )
+        await session.commit()
+
+    value["enabled"] = body.enabled
+    return ok(data=value, request_id=request.state.request_id)
+
+
 # -----------------------------
 # entries
 # -----------------------------
@@ -105,12 +360,55 @@ class AdminEntryItem(BaseModel):
     name: str = Field(..., min_length=1)
     iconUrl: str | None = None
     position: Literal["SHORTCUT", "OPERATION"]
-    jumpType: Literal["AGG_PAGE", "INFO_PAGE", "WEBVIEW", "ROUTE"]
+    jumpType: Literal["AGG_PAGE", "INFO_PAGE", "WEBVIEW", "ROUTE", "MINI_PROGRAM"]
     targetId: str = Field(..., min_length=1)
     sort: int = 0
     enabled: bool = True
     # 注意：published 由 publish/offline 控制；PUT 会忽略该字段
     published: bool | None = None
+
+    @model_validator(mode="after")
+    def _validate_webview_target_id(self):
+        if self.jumpType != "WEBVIEW":
+            return self
+
+        url = str(self.targetId or "").strip()
+        if not url:
+            raise ValueError("targetId 不能为空")
+
+        # v1 固化：
+        # - 生产：只允许 https://
+        # - 开发：允许 http://localhost（或本地回环）
+        env = str(getattr(settings, "app_env", "") or "").lower()
+        if env == "production":
+            if not url.startswith("https://"):
+                raise ValueError("WEBVIEW 的 targetId 必须为 https:// URL（生产环境）")
+            return self
+
+        allowed_dev_prefixes = ("https://", "http://localhost", "http://127.0.0.1", "http://0.0.0.0")
+        if not url.startswith(allowed_dev_prefixes):
+            raise ValueError("WEBVIEW 的 targetId 必须为 https:// 或本地回环 URL（开发环境）")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_mini_program_target_id(self):
+        if self.jumpType != "MINI_PROGRAM":
+            return self
+        # vNow：targetId 约定为 "appid|path"（path 可为空）
+        raw = str(self.targetId or "").strip()
+        if not raw:
+            raise ValueError("targetId 不能为空")
+        if "|" not in raw:
+            raise ValueError("MINI_PROGRAM 的 targetId 必须为 appid|path（例如 wx123...|/pages/index/index）")
+        appid, path = raw.split("|", 1)
+        appid = appid.strip()
+        path = path.strip()
+        if not appid:
+            raise ValueError("MINI_PROGRAM 的 appid 不能为空")
+        # path 允许为空；若不为空则应以 / 开头（小程序 path 口径）
+        if path and not path.startswith("/"):
+            raise ValueError("MINI_PROGRAM 的 path 必须以 / 开头（例如 /pages/index/index）")
+        return self
 
 
 class AdminPutEntriesBody(BaseModel):
@@ -119,8 +417,7 @@ class AdminPutEntriesBody(BaseModel):
 
 
 @router.get("/admin/mini-program/entries")
-async def admin_get_entries(request: Request, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
+async def admin_get_entries(request: Request, _admin=Depends(require_admin)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = (await session.scalars(select(SystemConfig).where(SystemConfig.key == _KEY_ENTRIES).limit(1))).first()
@@ -136,9 +433,9 @@ async def admin_get_entries(request: Request, authorization: str | None = Header
 
 
 @router.put("/admin/mini-program/entries")
-async def admin_put_entries(request: Request, body: AdminPutEntriesBody, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_put_entries(
+    request: Request, body: AdminPutEntriesBody, _admin=Depends(require_admin)
+):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_config(session, _KEY_ENTRIES)
@@ -165,16 +462,18 @@ async def admin_put_entries(request: Request, body: AdminPutEntriesBody, authori
         if body.version is not None:
             raw.setdefault("draftVersion", str(body.version))
 
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="entries")
+        _set_value_json(cfg, raw)
         await session.commit()
 
-    return ok(data={"items": new_items, "version": str((cfg.value_json or {}).get("version") or "0")}, request_id=request.state.request_id)
+    return ok(
+        data={"items": new_items, "version": str((cfg.value_json or {}).get("version") or "0")},
+        request_id=request.state.request_id,
+    )
 
 
 @router.post("/admin/mini-program/entries/publish")
-async def admin_publish_entries(request: Request, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_publish_entries(request: Request, _admin: ActorContext = Depends(require_admin_phone_bound)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_config(session, _KEY_ENTRIES)
@@ -182,22 +481,40 @@ async def admin_publish_entries(request: Request, authorization: str | None = He
         items = raw.get("items") or []
         if not isinstance(items, list):
             items = []
+
+        # 幂等 no-op：已全部 published=True 则不推进 version、不写审计
+        if all((isinstance(x, dict) and bool(x.get("published")) is True) for x in items):
+            return ok(
+                data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+                request_id=request.state.request_id,
+            )
 
         for x in items:
             if isinstance(x, dict):
                 x["published"] = True
         raw["items"] = items
         raw["version"] = _now_version()
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="entries")
+        _set_value_json(cfg, raw)
+        session.add(
+            _audit_mini_program_config(
+                request=request,
+                admin_id=str(_admin.sub),
+                action=AuditAction.PUBLISH.value,
+                resource_id="ENTRIES",
+                meta={"key": _KEY_ENTRIES, "afterPublished": True},
+            )
+        )
         await session.commit()
 
-    return ok(data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")}, request_id=request.state.request_id)
+    return ok(
+        data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+        request_id=request.state.request_id,
+    )
 
 
 @router.post("/admin/mini-program/entries/offline")
-async def admin_offline_entries(request: Request, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_offline_entries(request: Request, _admin: ActorContext = Depends(require_admin_phone_bound)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_config(session, _KEY_ENTRIES)
@@ -206,15 +523,34 @@ async def admin_offline_entries(request: Request, authorization: str | None = He
         if not isinstance(items, list):
             items = []
 
+        if all((isinstance(x, dict) and bool(x.get("published")) is False) for x in items):
+            return ok(
+                data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+                request_id=request.state.request_id,
+            )
+
         for x in items:
             if isinstance(x, dict):
                 x["published"] = False
         raw["items"] = items
         raw["version"] = _now_version()
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="entries")
+        _set_value_json(cfg, raw)
+        session.add(
+            _audit_mini_program_config(
+                request=request,
+                admin_id=str(_admin.sub),
+                action=AuditAction.OFFLINE.value,
+                resource_id="ENTRIES",
+                meta={"key": _KEY_ENTRIES, "afterPublished": False},
+            )
+        )
         await session.commit()
 
-    return ok(data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")}, request_id=request.state.request_id)
+    return ok(
+        data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+        request_id=request.state.request_id,
+    )
 
 
 # -----------------------------
@@ -228,12 +564,14 @@ class AdminPageItem(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     version: str | None = None
     published: bool = False
+    # 回显：草稿/发布状态（REQ-ADMIN-P0-012：预览与回显）
+    draftVersion: str | None = None
+    draftUpdatedAt: str | None = None
+    publishedAt: str | None = None
 
 
 @router.get("/admin/mini-program/pages")
-async def admin_get_pages(request: Request, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_get_pages(request: Request, _admin=Depends(require_admin)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = (await session.scalars(select(SystemConfig).where(SystemConfig.key == _KEY_PAGES).limit(1))).first()
@@ -257,6 +595,9 @@ async def admin_get_pages(request: Request, authorization: str | None = Header(d
                 "config": v.get("config") if isinstance(v.get("config"), dict) else {},
                 "version": str(v.get("version") or version),
                 "published": bool(v.get("published")),
+                "draftVersion": str(v.get("draftVersion")) if v.get("draftVersion") is not None else None,
+                "draftUpdatedAt": str(v.get("draftUpdatedAt")) if v.get("draftUpdatedAt") is not None else None,
+                "publishedAt": str(v.get("publishedAt")) if v.get("publishedAt") is not None else None,
             }
         )
 
@@ -275,13 +616,13 @@ async def admin_put_page(
     request: Request,
     id: str,
     body: AdminPutPageBody,
-    authorization: str | None = Header(default=None),
+    _admin=Depends(require_admin),
 ):
-    await _require_admin(authorization)
-
     # 规格：published 只能通过 publish/offline 控制
     if body.published is not None:
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "published 不允许通过该接口修改"})
+        raise HTTPException(
+            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "published 不允许通过该接口修改"}
+        )
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -299,12 +640,15 @@ async def admin_put_page(
             page["type"] = str(body.type)
         if body.config is not None:
             page["config"] = body.config if isinstance(body.config, dict) else {}
-        if body.version is not None:
-            page.setdefault("draftVersion", str(body.version))
+        # 草稿：每次保存都更新时间戳/草稿版本，便于运营识别“草稿态”
+        now = datetime.now()
+        page["draftUpdatedAt"] = _iso(now)
+        page["draftVersion"] = str(body.version) if body.version is not None else _now_version()
 
         pages[id] = page
         raw["pages"] = pages
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="pages")
+        _set_value_json(cfg, raw)
         await session.commit()
 
     return ok(
@@ -314,15 +658,16 @@ async def admin_put_page(
             "config": page.get("config") if isinstance(page.get("config"), dict) else {},
             "version": str(page.get("version") or raw.get("version") or "0"),
             "published": bool(page.get("published")),
+            "draftVersion": str(page.get("draftVersion")) if page.get("draftVersion") is not None else None,
+            "draftUpdatedAt": str(page.get("draftUpdatedAt")) if page.get("draftUpdatedAt") is not None else None,
+            "publishedAt": str(page.get("publishedAt")) if page.get("publishedAt") is not None else None,
         },
         request_id=request.state.request_id,
     )
 
 
 @router.post("/admin/mini-program/pages/{id}/publish")
-async def admin_publish_page(request: Request, id: str, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_publish_page(request: Request, id: str, _admin: ActorContext = Depends(require_admin_phone_bound)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_config(session, _KEY_PAGES)
@@ -335,22 +680,44 @@ async def admin_publish_page(request: Request, id: str, authorization: str | Non
         if not isinstance(page, dict):
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "页面不存在"})
 
+        if bool(page.get("published")) is True:
+            return ok(
+                data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+                request_id=request.state.request_id,
+            )
+
         v = _now_version()
+        now = datetime.now()
         page["published"] = True
         page["version"] = v
+        page["publishedAt"] = _iso(now)
+        # 发布后草稿视为已同步（无待发布变更）
+        page["draftVersion"] = v
+        page["draftUpdatedAt"] = _iso(now)
         pages[id] = page
         raw["pages"] = pages
         raw["version"] = v
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="pages")
+        _set_value_json(cfg, raw)
+        session.add(
+            _audit_mini_program_config(
+                request=request,
+                admin_id=str(_admin.sub),
+                action=AuditAction.PUBLISH.value,
+                resource_id=f"PAGES:{id}",
+                meta={"key": _KEY_PAGES, "pageId": id, "afterPublished": True},
+            )
+        )
         await session.commit()
 
-    return ok(data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")}, request_id=request.state.request_id)
+    return ok(
+        data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+        request_id=request.state.request_id,
+    )
 
 
 @router.post("/admin/mini-program/pages/{id}/offline")
-async def admin_offline_page(request: Request, id: str, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_offline_page(request: Request, id: str, _admin: ActorContext = Depends(require_admin_phone_bound)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_config(session, _KEY_PAGES)
@@ -362,6 +729,12 @@ async def admin_offline_page(request: Request, id: str, authorization: str | Non
         page = pages.get(id)
         if not isinstance(page, dict):
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "页面不存在"})
+
+        if bool(page.get("published")) is False:
+            return ok(
+                data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+                request_id=request.state.request_id,
+            )
 
         v = _now_version()
         page["published"] = False
@@ -369,10 +742,23 @@ async def admin_offline_page(request: Request, id: str, authorization: str | Non
         pages[id] = page
         raw["pages"] = pages
         raw["version"] = v
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="pages")
+        _set_value_json(cfg, raw)
+        session.add(
+            _audit_mini_program_config(
+                request=request,
+                admin_id=str(_admin.sub),
+                action=AuditAction.OFFLINE.value,
+                resource_id=f"PAGES:{id}",
+                meta={"key": _KEY_PAGES, "pageId": id, "afterPublished": False},
+            )
+        )
         await session.commit()
 
-    return ok(data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")}, request_id=request.state.request_id)
+    return ok(
+        data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+        request_id=request.state.request_id,
+    )
 
 
 # -----------------------------
@@ -381,9 +767,7 @@ async def admin_offline_page(request: Request, id: str, authorization: str | Non
 
 
 @router.get("/admin/mini-program/collections")
-async def admin_get_collections(request: Request, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_get_collections(request: Request, _admin=Depends(require_admin)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = (await session.scalars(select(SystemConfig).where(SystemConfig.key == _KEY_COLLECTIONS).limit(1))).first()
@@ -425,13 +809,13 @@ async def admin_put_collection(
     request: Request,
     id: str,
     body: AdminPutCollectionBody,
-    authorization: str | None = Header(default=None),
+    _admin=Depends(require_admin),
 ):
-    await _require_admin(authorization)
-
     # 规格：published 只能通过 publish/offline 控制
     if body.published is not None:
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "published 不允许通过该接口修改"})
+        raise HTTPException(
+            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "published 不允许通过该接口修改"}
+        )
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -455,16 +839,15 @@ async def admin_put_collection(
         col["updatedAt"] = _iso(datetime.utcnow())
         cols[id] = col
         raw["collections"] = cols
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="collections")
+        _set_value_json(cfg, raw)
         await session.commit()
 
     return ok(data=col, request_id=request.state.request_id)
 
 
 @router.post("/admin/mini-program/collections/{id}/publish")
-async def admin_publish_collection(request: Request, id: str, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_publish_collection(request: Request, id: str, _admin: ActorContext = Depends(require_admin_phone_bound)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_config(session, _KEY_COLLECTIONS)
@@ -475,6 +858,12 @@ async def admin_publish_collection(request: Request, id: str, authorization: str
         col = cols.get(id)
         if not isinstance(col, dict):
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "集合不存在"})
+
+        if bool(col.get("published")) is True:
+            return ok(
+                data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+                request_id=request.state.request_id,
+            )
 
         v = _now_version()
         col["published"] = True
@@ -483,16 +872,27 @@ async def admin_publish_collection(request: Request, id: str, authorization: str
         cols[id] = col
         raw["collections"] = cols
         raw["version"] = v
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="collections")
+        _set_value_json(cfg, raw)
+        session.add(
+            _audit_mini_program_config(
+                request=request,
+                admin_id=str(_admin.sub),
+                action=AuditAction.PUBLISH.value,
+                resource_id=f"COLLECTIONS:{id}",
+                meta={"key": _KEY_COLLECTIONS, "collectionId": id, "afterPublished": True},
+            )
+        )
         await session.commit()
 
-    return ok(data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")}, request_id=request.state.request_id)
+    return ok(
+        data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+        request_id=request.state.request_id,
+    )
 
 
 @router.post("/admin/mini-program/collections/{id}/offline")
-async def admin_offline_collection(request: Request, id: str, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
-
+async def admin_offline_collection(request: Request, id: str, _admin: ActorContext = Depends(require_admin_phone_bound)):
     session_factory = get_session_factory()
     async with session_factory() as session:
         cfg = await _get_or_create_config(session, _KEY_COLLECTIONS)
@@ -504,6 +904,12 @@ async def admin_offline_collection(request: Request, id: str, authorization: str
         if not isinstance(col, dict):
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "集合不存在"})
 
+        if bool(col.get("published")) is False:
+            return ok(
+                data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+                request_id=request.state.request_id,
+            )
+
         v = _now_version()
         col["published"] = False
         col["version"] = v
@@ -511,8 +917,20 @@ async def admin_offline_collection(request: Request, id: str, authorization: str
         cols[id] = col
         raw["collections"] = cols
         raw["version"] = v
-        cfg.value_json = raw
+        _ensure_json_serializable(raw, field_name="collections")
+        _set_value_json(cfg, raw)
+        session.add(
+            _audit_mini_program_config(
+                request=request,
+                admin_id=str(_admin.sub),
+                action=AuditAction.OFFLINE.value,
+                resource_id=f"COLLECTIONS:{id}",
+                meta={"key": _KEY_COLLECTIONS, "collectionId": id, "afterPublished": False},
+            )
+        )
         await session.commit()
 
-    return ok(data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")}, request_id=request.state.request_id)
-
+    return ok(
+        data={"success": True, "version": str((cfg.value_json or {}).get("version") or "0")},
+        request_id=request.state.request_id,
+    )

@@ -31,20 +31,11 @@ from app.utils.db import get_session_factory
 from app.utils.jwt_token import decode_and_validate_user_token
 from app.utils.redis_client import get_redis
 from app.utils.response import ok
+from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
 router = APIRouter(tags=["ai"])
 
 _KEY_AI_CONFIG = "AI_CONFIG"
-
-
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
-
 
 def _require_idempotency_key(idempotency_key: str | None) -> str:
     if not idempotency_key or not idempotency_key.strip():
@@ -223,12 +214,17 @@ async def _openai_compat_chat(
             data = resp.json()
             if resp.status_code != 200:
                 # 兼容返回结构：尽量提取错误信息但不对外透传
-                raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": "AI 服务调用失败", "details": {"status": resp.status_code}})
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "code": "INTERNAL_ERROR",
+                        "message": "AI 服务调用失败",
+                        "details": {"status": resp.status_code},
+                    },
+                )
 
             content = (
-                (data.get("choices") or [{}])[0].get("message", {}).get("content")
-                if isinstance(data, dict)
-                else None
+                (data.get("choices") or [{}])[0].get("message", {}).get("content") if isinstance(data, dict) else None
             )
             if not content or not str(content).strip():
                 raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": "AI 服务返回异常"})
@@ -321,7 +317,9 @@ async def ai_chat(
             request=request,
         )
 
-        data = AiChatResp(message={"role": "assistant", "content": content}, provider="OPENAI_COMPAT", model=model).model_dump()
+        data = AiChatResp(
+            message={"role": "assistant", "content": content}, provider="OPENAI_COMPAT", model=model
+        ).model_dump()
         await idem.set(
             operation="ai_chat",
             actor_type="USER",
@@ -332,7 +330,7 @@ async def ai_chat(
         return ok(data=data, request_id=request.state.request_id)
     except HTTPException as exc:
         cost_ms = int((time.perf_counter() - started) * 1000)
-        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        detail: dict[str, object] = exc.detail if isinstance(exc.detail, dict) else {}
         error_code = str(detail.get("code") or "INTERNAL_ERROR")
 
         # 仅对“调用失败”记录 fail；停用/未登录/限流属于前置校验，不记为调用 fail（避免噪音）
@@ -356,8 +354,11 @@ async def ai_chat(
                     status_code=int(exc.status_code),
                     success=False,
                     data=None,
-                    error={"code": error_code, "message": str(detail.get("message") or "AI 服务调用失败"), "details": None},
+                    error={
+                        "code": error_code,
+                        "message": str(detail.get("message") or "AI 服务调用失败"),
+                        "details": None,
+                    },
                 ),
             )
         raise
-

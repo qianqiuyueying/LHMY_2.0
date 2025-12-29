@@ -1,0 +1,33 @@
+<!-- pages/search/search.wxml -->
+<view class="container">
+  <view class="search-card">
+    <view class="search-row">
+      <input
+        class="search-input"
+        placeholder="搜索商品/场所"
+        value="{{keyword}}"
+        focus="{{autoFocus}}"
+        bindinput="onInput"
+        bindconfirm="onConfirm"
+        confirm-type="search"
+      />
+      <button class="btn btn-primary" bindtap="onConfirm">搜索</button>
+    </view>
+    <view class="hint muted">确认后将跳转到商城列表页展示结果。</view>
+  </view>
+
+  <view class="history card">
+    <view class="history-header">
+      <text class="history-title">搜索历史</text>
+      <button class="btn btn-ghost" bindtap="onClearHistory" wx:if="{{history.length > 0}}">清空</button>
+    </view>
+    <view class="history-empty muted" wx:if="{{history.length === 0}}">暂无历史</view>
+    <view class="history-tags" wx:else>
+      <view class="tag" wx:for="{{history}}" wx:key="*this" data-keyword="{{item}}" bindtap="onHistoryTap">
+        {{item}}
+      </view>
+    </view>
+  </view>
+</view>
+
+

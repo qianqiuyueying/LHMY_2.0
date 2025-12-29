@@ -1,0 +1,40 @@
+<!-- pages/address/address-list/address-list.wxml -->
+<view class="container">
+  <view class="top-actions">
+    <button class="btn btn-primary" bindtap="onAdd">新增地址</button>
+  </view>
+
+  <view class="state" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+
+  <view class="state" wx:elif="{{!loading && addresses.length === 0}}">
+    <text>暂无收货地址</text>
+    <view style="margin-top: 16rpx">
+      <button class="btn btn-ghost" bindtap="onAdd">去添加</button>
+    </view>
+  </view>
+
+  <view class="list" wx:else>
+    <view class="card addr" wx:for="{{addresses}}" wx:key="id">
+      <view class="addr-main" bindtap="onSelect" data-id="{{item.id}}">
+        <view class="addr-row">
+          <text class="name">{{item.receiverName}}</text>
+          <text class="phone">{{item.receiverPhone}}</text>
+          <text class="badge" wx:if="{{item.isDefault}}">默认</text>
+        </view>
+        <view class="addr-line">
+          <text class="line">{{item.addressLine}}</text>
+        </view>
+      </view>
+
+      <view class="addr-actions">
+        <button class="mini-btn" bindtap="onEdit" data-id="{{item.id}}">编辑</button>
+        <button class="mini-btn" bindtap="onSetDefault" data-id="{{item.id}}" wx:if="{{!item.isDefault}}">设默认</button>
+        <button class="mini-btn danger" bindtap="onDelete" data-id="{{item.id}}">删除</button>
+      </view>
+    </view>
+  </view>
+</view>
+
+

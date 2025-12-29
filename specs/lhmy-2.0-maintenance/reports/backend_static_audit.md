@@ -1,0 +1,325 @@
+# Backend Static Audit (best-effort)
+## Meta
+- python files: **168**
+- modules parsed: **168**
+- modules with parse errors: **0**
+
+## Candidates (0 static references)
+> 注意：仅表示“静态扫描未发现引用”；Python 动态特性可能导致漏检。
+
+- `app.api.v1.admin_accounts.AdminCreateProviderUserBody` (class) — `backend\app\api\v1\admin_accounts.py:52`
+- `app.api.v1.admin_accounts.AdminCreateDealerUserBody` (class) — `backend\app\api\v1\admin_accounts.py:57`
+- `app.api.v1.admin_accounts.AdminCreateProviderStaffBody` (class) — `backend\app\api\v1\admin_accounts.py:62`
+- `app.api.v1.admin_accounts.admin_list_provider_users` (async_function) — `backend\app\api\v1\admin_accounts.py:68`
+- `app.api.v1.admin_accounts.admin_create_provider_user` (async_function) — `backend\app\api\v1\admin_accounts.py:109`
+- `app.api.v1.admin_accounts.admin_reset_provider_user_password` (async_function) — `backend\app\api\v1\admin_accounts.py:191`
+- `app.api.v1.admin_accounts.admin_suspend_provider_user` (async_function) — `backend\app\api\v1\admin_accounts.py:247`
+- `app.api.v1.admin_accounts.admin_activate_provider_user` (async_function) — `backend\app\api\v1\admin_accounts.py:317`
+- `app.api.v1.admin_accounts.admin_list_provider_staff` (async_function) — `backend\app\api\v1\admin_accounts.py:387`
+- `app.api.v1.admin_accounts.admin_create_provider_staff` (async_function) — `backend\app\api\v1\admin_accounts.py:428`
+- `app.api.v1.admin_accounts.admin_reset_provider_staff_password` (async_function) — `backend\app\api\v1\admin_accounts.py:507`
+- `app.api.v1.admin_accounts.admin_suspend_provider_staff` (async_function) — `backend\app\api\v1\admin_accounts.py:563`
+- `app.api.v1.admin_accounts.admin_activate_provider_staff` (async_function) — `backend\app\api\v1\admin_accounts.py:632`
+- `app.api.v1.admin_accounts.admin_list_dealer_users` (async_function) — `backend\app\api\v1\admin_accounts.py:701`
+- `app.api.v1.admin_accounts.admin_create_dealer_user` (async_function) — `backend\app\api\v1\admin_accounts.py:742`
+- `app.api.v1.admin_accounts.admin_reset_dealer_user_password` (async_function) — `backend\app\api\v1\admin_accounts.py:822`
+- `app.api.v1.admin_accounts.admin_suspend_dealer_user` (async_function) — `backend\app\api\v1\admin_accounts.py:878`
+- `app.api.v1.admin_accounts.admin_activate_dealer_user` (async_function) — `backend\app\api\v1\admin_accounts.py:948`
+- `app.api.v1.admin_ai._extract_bearer_token` (function) — `backend\app\api\v1\admin_ai.py:52`
+- `app.api.v1.admin_ai.AdminAiConfigResp` (class) — `backend\app\api\v1\admin_ai.py:191`
+- `app.api.v1.admin_ai.admin_get_ai_config` (async_function) — `backend\app\api\v1\admin_ai.py:207`
+- `app.api.v1.admin_ai.admin_put_ai_config` (async_function) — `backend\app\api\v1\admin_ai.py:221`
+- `app.api.v1.admin_ai.admin_list_ai_audit_logs` (async_function) — `backend\app\api\v1\admin_ai.py:413`
+- `app.api.v1.admin_auth._require_admin_context` (async_function) — `backend\app\api\v1\admin_auth.py:44`
+- `app.api.v1.admin_auth.AdminLoginBody` (class) — `backend\app\api\v1\admin_auth.py:86`
+- `app.api.v1.admin_auth.admin_login` (async_function) — `backend\app\api\v1\admin_auth.py:121`
+- `app.api.v1.admin_auth.Admin2faChallengeBody` (class) — `backend\app\api\v1\admin_auth.py:191`
+- `app.api.v1.admin_auth.admin_2fa_challenge` (async_function) — `backend\app\api\v1\admin_auth.py:196`
+- `app.api.v1.admin_auth.Admin2faVerifyBody` (class) — `backend\app\api\v1\admin_auth.py:226`
+- `app.api.v1.admin_auth.admin_2fa_verify` (async_function) — `backend\app\api\v1\admin_auth.py:232`
+- `app.api.v1.admin_auth.AdminChangePasswordBody` (class) — `backend\app\api\v1\admin_auth.py:299`
+- `app.api.v1.admin_auth.admin_change_password` (async_function) — `backend\app\api\v1\admin_auth.py:305`
+- `app.api.v1.admin_auth.AdminPhoneBindChallengeBody` (class) — `backend\app\api\v1\admin_auth.py:349`
+- `app.api.v1.admin_auth.admin_phone_bind_challenge` (async_function) — `backend\app\api\v1\admin_auth.py:354`
+- `app.api.v1.admin_auth.AdminPhoneBindVerifyBody` (class) — `backend\app\api\v1\admin_auth.py:372`
+- `app.api.v1.admin_auth.admin_phone_bind_verify` (async_function) — `backend\app\api\v1\admin_auth.py:387`
+- `app.api.v1.admin_auth.admin_refresh` (async_function) — `backend\app\api\v1\admin_auth.py:431`
+- `app.api.v1.admin_auth.admin_logout` (async_function) — `backend\app\api\v1\admin_auth.py:452`
+- `app.api.v1.admin_dashboard.admin_dashboard_summary` (async_function) — `backend\app\api\v1\admin_dashboard.py:43`
+- `app.api.v1.admin_dealer_settlements.PutCommissionBody` (class) — `backend\app\api\v1\admin_dealer_settlements.py:128`
+- `app.api.v1.admin_dealer_settlements.admin_get_dealer_commission` (async_function) — `backend\app\api\v1\admin_dealer_settlements.py:149`
+- `app.api.v1.admin_dealer_settlements.admin_put_dealer_commission` (async_function) — `backend\app\api\v1\admin_dealer_settlements.py:167`
+- `app.api.v1.admin_dealer_settlements.GenerateBody` (class) — `backend\app\api\v1\admin_dealer_settlements.py:200`
+- `app.api.v1.admin_dealer_settlements.admin_generate_dealer_settlements` (async_function) — `backend\app\api\v1\admin_dealer_settlements.py:205`
+- `app.api.v1.admin_dealer_settlements.admin_list_dealer_settlements` (async_function) — `backend\app\api\v1\admin_dealer_settlements.py:409`
+- `app.api.v1.admin_dealer_settlements.MarkSettledBody` (class) — `backend\app\api\v1\admin_dealer_settlements.py:458`
+- `app.api.v1.admin_dealer_settlements.admin_mark_dealer_settlement_settled` (async_function) — `backend\app\api\v1\admin_dealer_settlements.py:464`
+- `app.api.v1.admin_dev.SeedDemoDataBody` (class) — `backend\app\api\v1\admin_dev.py:52`
+- `app.api.v1.admin_dev.seed_demo_data` (async_function) — `backend\app\api\v1\admin_dev.py:79`
+- `app.api.v1.admin_enterprises.AdminEnterpriseUpdateReq` (class) — `backend\app\api\v1\admin_enterprises.py:37`
+- `app.api.v1.admin_enterprises.admin_list_enterprises` (async_function) — `backend\app\api\v1\admin_enterprises.py:58`
+- `app.api.v1.admin_enterprises.admin_get_enterprise` (async_function) — `backend\app\api\v1\admin_enterprises.py:101`
+- `app.api.v1.admin_enterprises.admin_update_enterprise` (async_function) — `backend\app\api\v1\admin_enterprises.py:119`
+- `app.api.v1.admin_entitlement_transfers.admin_list_entitlement_transfers` (async_function) — `backend\app\api\v1\admin_entitlement_transfers.py:51`
+- `app.api.v1.admin_legal.admin_list_legal_agreements` (async_function) — `backend\app\api\v1\admin_legal.py:105`
+- `app.api.v1.admin_legal.admin_get_legal_agreement` (async_function) — `backend\app\api\v1\admin_legal.py:139`
+- `app.api.v1.admin_legal.UpsertAgreementBody` (class) — `backend\app\api\v1\admin_legal.py:161`
+- `app.api.v1.admin_legal.admin_upsert_legal_agreement` (async_function) — `backend\app\api\v1\admin_legal.py:169`
+- `app.api.v1.admin_legal.admin_publish_legal_agreement` (async_function) — `backend\app\api\v1\admin_legal.py:235`
+- `app.api.v1.admin_legal.admin_offline_legal_agreement` (async_function) — `backend\app\api\v1\admin_legal.py:270`
+- `app.api.v1.admin_mini_program_config.AdminEntryItem` (class) — `backend\app\api\v1\admin_mini_program_config.py:145`
+- `app.api.v1.admin_mini_program_config.AdminPutEntriesBody` (class) — `backend\app\api\v1\admin_mini_program_config.py:201`
+- `app.api.v1.admin_mini_program_config.admin_get_entries` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:207`
+- `app.api.v1.admin_mini_program_config.admin_put_entries` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:223`
+- `app.api.v1.admin_mini_program_config.admin_publish_entries` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:263`
+- `app.api.v1.admin_mini_program_config.admin_offline_entries` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:304`
+- `app.api.v1.admin_mini_program_config.AdminPageItem` (class) — `backend\app\api\v1\admin_mini_program_config.py:348`
+- `app.api.v1.admin_mini_program_config.admin_get_pages` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:361`
+- `app.api.v1.admin_mini_program_config.AdminPutPageBody` (class) — `backend\app\api\v1\admin_mini_program_config.py:394`
+- `app.api.v1.admin_mini_program_config.admin_put_page` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:402`
+- `app.api.v1.admin_mini_program_config.admin_publish_page` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:457`
+- `app.api.v1.admin_mini_program_config.admin_offline_page` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:507`
+- `app.api.v1.admin_mini_program_config.admin_get_collections` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:557`
+- `app.api.v1.admin_mini_program_config.AdminPutCollectionBody` (class) — `backend\app\api\v1\admin_mini_program_config.py:586`
+- `app.api.v1.admin_mini_program_config.admin_put_collection` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:595`
+- `app.api.v1.admin_mini_program_config.admin_publish_collection` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:637`
+- `app.api.v1.admin_mini_program_config.admin_offline_collection` (async_function) — `backend\app\api\v1\admin_mini_program_config.py:682`
+- `app.api.v1.admin_notification_receivers.admin_search_notification_receivers` (async_function) — `backend\app\api\v1\admin_notification_receivers.py:33`
+- `app.api.v1.admin_notifications._mask_phone` (function) — `backend\app\api\v1\admin_notifications.py:50`
+- `app.api.v1.admin_notifications.admin_list_notifications` (async_function) — `backend\app\api\v1\admin_notifications.py:117`
+- `app.api.v1.admin_notifications.admin_mark_notification_read` (async_function) — `backend\app\api\v1\admin_notifications.py:152`
+- `app.api.v1.admin_notifications._AudienceTarget` (class) — `backend\app\api\v1\admin_notifications.py:186`
+- `app.api.v1.admin_notifications._Audience` (class) — `backend\app\api\v1\admin_notifications.py:191`
+- `app.api.v1.admin_notifications.SendBody` (class) — `backend\app\api\v1\admin_notifications.py:196`
+- `app.api.v1.admin_notifications.admin_send_notifications` (async_function) — `backend\app\api\v1\admin_notifications.py:246`
+- `app.api.v1.admin_provider_onboarding.admin_list_provider_health_card_onboarding` (async_function) — `backend\app\api\v1\admin_provider_onboarding.py:47`
+- `app.api.v1.admin_provider_onboarding.DecideBody` (class) — `backend\app\api\v1\admin_provider_onboarding.py:75`
+- `app.api.v1.admin_provider_onboarding.admin_decide_provider_health_card_onboarding` (async_function) — `backend\app\api\v1\admin_provider_onboarding.py:81`
+- `app.api.v1.admin_redemptions.admin_list_redemptions` (async_function) — `backend\app\api\v1\admin_redemptions.py:56`
+- `app.api.v1.admin_regions.AdminRegionItem` (class) — `backend\app\api\v1\admin_regions.py:96`
+- `app.api.v1.admin_regions.AdminPutRegionCitiesBody` (class) — `backend\app\api\v1\admin_regions.py:123`
+- `app.api.v1.admin_regions.admin_get_region_cities` (async_function) — `backend\app\api\v1\admin_regions.py:129`
+- `app.api.v1.admin_regions.admin_put_region_cities` (async_function) — `backend\app\api\v1\admin_regions.py:145`
+- `app.api.v1.admin_regions.admin_publish_region_cities` (async_function) — `backend\app\api\v1\admin_regions.py:183`
+- `app.api.v1.admin_regions.admin_offline_region_cities` (async_function) — `backend\app\api\v1\admin_regions.py:221`
+- `app.api.v1.admin_regions.admin_import_cn_region_cities` (async_function) — `backend\app\api\v1\admin_regions.py:354`
+- `app.api.v1.admin_sellable_cards.admin_list_sellable_cards` (async_function) — `backend\app\api\v1\admin_sellable_cards.py:81`
+- `app.api.v1.admin_sellable_cards.admin_create_sellable_card` (async_function) — `backend\app\api\v1\admin_sellable_cards.py:127`
+- `app.api.v1.admin_sellable_cards.admin_update_sellable_card` (async_function) — `backend\app\api\v1\admin_sellable_cards.py:177`
+- `app.api.v1.admin_sellable_cards.admin_enable_sellable_card` (async_function) — `backend\app\api\v1\admin_sellable_cards.py:244`
+- `app.api.v1.admin_sellable_cards.admin_disable_sellable_card` (async_function) — `backend\app\api\v1\admin_sellable_cards.py:284`
+- `app.api.v1.admin_service_categories.admin_list_service_categories` (async_function) — `backend\app\api\v1\admin_service_categories.py:102`
+- `app.api.v1.admin_service_categories.admin_create_service_category` (async_function) — `backend\app\api\v1\admin_service_categories.py:142`
+- `app.api.v1.admin_service_categories.admin_update_service_category` (async_function) — `backend\app\api\v1\admin_service_categories.py:195`
+- `app.api.v1.admin_service_categories.admin_enable_service_category` (async_function) — `backend\app\api\v1\admin_service_categories.py:253`
+- `app.api.v1.admin_service_categories.admin_disable_service_category` (async_function) — `backend\app\api\v1\admin_service_categories.py:295`
+- `app.api.v1.admin_service_package_pricing.PriceObj` (class) — `backend\app\api\v1\admin_service_package_pricing.py:67`
+- `app.api.v1.admin_service_package_pricing.PricingRuleItem` (class) — `backend\app\api\v1\admin_service_package_pricing.py:74`
+- `app.api.v1.admin_service_package_pricing.PutPricingBody` (class) — `backend\app\api\v1\admin_service_package_pricing.py:94`
+- `app.api.v1.admin_service_package_pricing.admin_get_pricing` (async_function) — `backend\app\api\v1\admin_service_package_pricing.py:111`
+- `app.api.v1.admin_service_package_pricing.admin_put_pricing` (async_function) — `backend\app\api\v1\admin_service_package_pricing.py:126`
+- `app.api.v1.admin_service_package_pricing.admin_publish_pricing` (async_function) — `backend\app\api\v1\admin_service_package_pricing.py:169`
+- `app.api.v1.admin_service_package_pricing.admin_offline_pricing` (async_function) — `backend\app\api\v1\admin_service_package_pricing.py:191`
+- `app.api.v1.admin_service_packages.ServicePackageServiceIn` (class) — `backend\app\api\v1\admin_service_packages.py:40`
+- `app.api.v1.admin_service_packages.ServicePackageItemResp` (class) — `backend\app\api\v1\admin_service_packages.py:45`
+- `app.api.v1.admin_service_packages.ServicePackageDetailResp` (class) — `backend\app\api\v1\admin_service_packages.py:56`
+- `app.api.v1.admin_service_packages.PageResp` (class) — `backend\app\api\v1\admin_service_packages.py:66`
+- `app.api.v1.admin_service_packages.admin_list_service_packages` (async_function) — `backend\app\api\v1\admin_service_packages.py:228`
+- `app.api.v1.admin_service_packages.admin_get_service_package_detail` (async_function) — `backend\app\api\v1\admin_service_packages.py:285`
+- `app.api.v1.admin_service_packages.admin_create_service_package` (async_function) — `backend\app\api\v1\admin_service_packages.py:312`
+- `app.api.v1.admin_service_packages.admin_update_service_package` (async_function) — `backend\app\api\v1\admin_service_packages.py:426`
+- `app.api.v1.admin_users.admin_list_users` (async_function) — `backend\app\api\v1\admin_users.py:68`
+- `app.api.v1.admin_users.admin_get_user` (async_function) — `backend\app\api\v1\admin_users.py:120`
+- `app.api.v1.admin_venues._extract_bearer_token` (function) — `backend\app\api\v1\admin_venues.py:36`
+- `app.api.v1.admin_venues.admin_list_venues` (async_function) — `backend\app\api\v1\admin_venues.py:83`
+- `app.api.v1.admin_venues.admin_get_venue_detail` (async_function) — `backend\app\api\v1\admin_venues.py:131`
+- `app.api.v1.admin_venues.admin_publish_venue` (async_function) — `backend\app\api\v1\admin_venues.py:238`
+- `app.api.v1.admin_venues.admin_reject_venue` (async_function) — `backend\app\api\v1\admin_venues.py:250`
+- `app.api.v1.admin_venues.admin_offline_venue` (async_function) — `backend\app\api\v1\admin_venues.py:262`
+- `app.api.v1.admin_website_config.SiteSeoConfig` (class) — `backend\app\api\v1\admin_website_config.py:99`
+- `app.api.v1.admin_website_config.admin_get_website_site_seo` (async_function) — `backend\app\api\v1\admin_website_config.py:129`
+- `app.api.v1.admin_website_config.admin_put_website_site_seo` (async_function) — `backend\app\api\v1\admin_website_config.py:149`
+- `app.api.v1.admin_website_config.NavItemSwitch` (class) — `backend\app\api\v1\admin_website_config.py:194`
+- `app.api.v1.admin_website_config.NavControlConfig` (class) — `backend\app\api\v1\admin_website_config.py:198`
+- `app.api.v1.admin_website_config.admin_get_website_nav_control` (async_function) — `backend\app\api\v1\admin_website_config.py:216`
+- `app.api.v1.admin_website_config.admin_put_website_nav_control` (async_function) — `backend\app\api\v1\admin_website_config.py:239`
+- `app.api.v1.admin_website_config.MaintenanceModeConfig` (class) — `backend\app\api\v1\admin_website_config.py:278`
+- `app.api.v1.admin_website_config.admin_get_website_maintenance_mode` (async_function) — `backend\app\api\v1\admin_website_config.py:299`
+- `app.api.v1.admin_website_config.admin_put_website_maintenance_mode` (async_function) — `backend\app\api\v1\admin_website_config.py:321`
+- `app.api.v1.admin_website_config.PutWebsiteExternalLinksBody` (class) — `backend\app\api\v1\admin_website_config.py:364`
+- `app.api.v1.admin_website_config.admin_get_website_external_links` (async_function) — `backend\app\api\v1\admin_website_config.py:380`
+- `app.api.v1.admin_website_config.admin_put_website_external_links` (async_function) — `backend\app\api\v1\admin_website_config.py:392`
+- `app.api.v1.admin_website_config.FooterConfig` (class) — `backend\app\api\v1\admin_website_config.py:438`
+- `app.api.v1.admin_website_config.admin_get_website_footer_config` (async_function) — `backend\app\api\v1\admin_website_config.py:450`
+- `app.api.v1.admin_website_config.admin_put_website_footer_config` (async_function) — `backend\app\api\v1\admin_website_config.py:472`
+- `app.api.v1.admin_website_config.RecommendedVenueItem` (class) — `backend\app\api\v1\admin_website_config.py:532`
+- `app.api.v1.admin_website_config.PutRecommendedVenuesBody` (class) — `backend\app\api\v1\admin_website_config.py:543`
+- `app.api.v1.admin_website_config.admin_get_website_home_recommended_venues` (async_function) — `backend\app\api\v1\admin_website_config.py:549`
+- `app.api.v1.admin_website_config.admin_put_website_home_recommended_venues` (async_function) — `backend\app\api\v1\admin_website_config.py:588`
+- `app.api.v1.after_sales.AfterSaleCaseDTO` (class) — `backend\app\api\v1\after_sales.py:56`
+- `app.api.v1.after_sales.CreateAfterSaleBody` (class) — `backend\app\api\v1\after_sales.py:90`
+- `app.api.v1.after_sales.create_after_sale_case` (async_function) — `backend\app\api\v1\after_sales.py:98`
+- `app.api.v1.after_sales.admin_list_after_sales` (async_function) — `backend\app\api\v1\after_sales.py:158`
+- `app.api.v1.after_sales.AdminDecideAfterSaleBody` (class) — `backend\app\api\v1\after_sales.py:210`
+- `app.api.v1.after_sales.admin_decide_after_sale` (async_function) — `backend\app\api\v1\after_sales.py:216`
+- `app.api.v1.ai.AiMessage` (class) — `backend\app\api\v1\ai.py:124`
+- `app.api.v1.ai.AiChatBody` (class) — `backend\app\api\v1\ai.py:129`
+- `app.api.v1.ai.AiChatResp` (class) — `backend\app\api\v1\ai.py:135`
+- `app.api.v1.ai.ai_chat` (async_function) — `backend\app\api\v1\ai.py:254`
+- `app.api.v1.audit_logs.admin_list_audit_logs` (async_function) — `backend\app\api\v1\audit_logs.py:72`
+- `app.api.v1.auth.RequestSmsCodeBody` (class) — `backend\app\api\v1\auth.py:42`
+- `app.api.v1.auth.RequestSmsCodeResp` (class) — `backend\app\api\v1\auth.py:47`
+- `app.api.v1.auth.request_sms_code` (async_function) — `backend\app\api\v1\auth.py:54`
+- `app.api.v1.auth.H5LoginBody` (class) — `backend\app\api\v1\auth.py:67`
+- `app.api.v1.auth.H5LoginRespUser` (class) — `backend\app\api\v1\auth.py:73`
+- `app.api.v1.auth.H5LoginResp` (class) — `backend\app\api\v1\auth.py:79`
+- `app.api.v1.auth.h5_login` (async_function) — `backend\app\api\v1\auth.py:85`
+- `app.api.v1.auth.EnterpriseSuggestionRespItem` (class) — `backend\app\api\v1\auth.py:128`
+- `app.api.v1.auth.enterprise_suggestions` (async_function) — `backend\app\api\v1\auth.py:135`
+- `app.api.v1.auth.BindEnterpriseBody` (class) — `backend\app\api\v1\auth.py:163`
+- `app.api.v1.auth.bind_enterprise` (async_function) — `backend\app\api\v1\auth.py:171`
+- `app.api.v1.auth.user_refresh` (async_function) — `backend\app\api\v1\auth.py:278`
+- `app.api.v1.auth.user_logout` (async_function) — `backend\app\api\v1\auth.py:301`
+- `app.api.v1.auth._require_admin` (async_function) — `backend\app\api\v1\auth.py:316`
+- `app.api.v1.auth.admin_list_enterprise_bindings` (async_function) — `backend\app\api\v1\auth.py:347`
+- `app.api.v1.auth.admin_approve_enterprise_binding` (async_function) — `backend\app\api\v1\auth.py:417`
+- `app.api.v1.auth.admin_reject_enterprise_binding` (async_function) — `backend\app\api\v1\auth.py:511`
+- `app.api.v1.bookings.CreateBookingBody` (class) — `backend\app\api\v1\bookings.py:179`
+- `app.api.v1.bookings.get_booking_order_item_context` (async_function) — `backend\app\api\v1\bookings.py:236`
+- `app.api.v1.bookings.create_booking` (async_function) — `backend\app\api\v1\bookings.py:255`
+- `app.api.v1.bookings.list_my_bookings` (async_function) — `backend\app\api\v1\bookings.py:432`
+- `app.api.v1.bookings.get_booking_detail` (async_function) — `backend\app\api\v1\bookings.py:477`
+- `app.api.v1.bookings.cancel_booking` (async_function) — `backend\app\api\v1\bookings.py:547`
+- `app.api.v1.bookings.AdminCancelBookingBody` (class) — `backend\app\api\v1\bookings.py:605`
+- `app.api.v1.bookings.admin_cancel_booking` (async_function) — `backend\app\api\v1\bookings.py:610`
+- `app.api.v1.bookings.admin_list_bookings` (async_function) — `backend\app\api\v1\bookings.py:737`
+- `app.api.v1.bookings.confirm_booking` (async_function) — `backend\app\api\v1\bookings.py:828`
+- `app.api.v1.bookings.list_provider_bookings` (async_function) — `backend\app\api\v1\bookings.py:888`
+- `app.api.v1.bookings.provider_cancel_booking` (async_function) — `backend\app\api\v1\bookings.py:950`
+- `app.api.v1.cart._extract_bearer_token` (function) — `backend\app\api\v1\cart.py:32`
+- `app.api.v1.cart.get_cart` (async_function) — `backend\app\api\v1\cart.py:88`
+- `app.api.v1.cart.AddCartItemBody` (class) — `backend\app\api\v1\cart.py:99`
+- `app.api.v1.cart.add_cart_item` (async_function) — `backend\app\api\v1\cart.py:106`
+- `app.api.v1.cart.UpdateCartItemBody` (class) — `backend\app\api\v1\cart.py:159`
+- `app.api.v1.cart.update_cart_item` (async_function) — `backend\app\api\v1\cart.py:164`
+- `app.api.v1.cart.delete_cart_item` (async_function) — `backend\app\api\v1\cart.py:208`
+- `app.api.v1.cart.clear_cart_items` (async_function) — `backend\app\api\v1\cart.py:224`
+- `app.api.v1.cms.CmsChannelDTO` (class) — `backend\app\api\v1\cms.py:62`
+- `app.api.v1.cms.CmsContentDTO` (class) — `backend\app\api\v1\cms.py:82`
+- `app.api.v1.cms.mini_program_list_cms_channels` (async_function) — `backend\app\api\v1\cms.py:183`
+- (truncated) total: 394
+
+## Duplicate Function Body Candidates (module-level)
+> 依据：函数 body 的 AST hash 相同（不含注释/行号）。需要人工确认语义是否可合并。
+
+- bodyHash `1c5c0ec99d0c0d2ffbe2fb75a704bc6573f81b61` — **20** occurrences
+  - `app.api.v1.admin_ai._extract_bearer_token` — `backend\app\api\v1\admin_ai.py:52`
+  - `app.api.v1.admin_auth._extract_bearer_token` — `backend\app\api\v1\admin_auth.py:35`
+  - `app.api.v1.admin_venues._extract_bearer_token` — `backend\app\api\v1\admin_venues.py:36`
+  - `app.api.v1.after_sales._extract_bearer_token` — `backend\app\api\v1\after_sales.py:40`
+  - `app.api.v1.ai._extract_bearer_token` — `backend\app\api\v1\ai.py:40`
+  - `app.api.v1.auth._extract_bearer_token` — `backend\app\api\v1\auth.py:268`
+  - `app.api.v1.bookings._extract_bearer_token` — `backend\app\api\v1\bookings.py:71`
+  - `app.api.v1.cart._extract_bearer_token` — `backend\app\api\v1\cart.py:32`
+  - `app.api.v1.dealer._extract_bearer_token` — `backend\app\api\v1\dealer.py:45`
+  - `app.api.v1.dealer_auth._extract_bearer_token` — `backend\app\api\v1\dealer_auth.py:110`
+  - (truncated) 20 total
+- bodyHash `3b034d8da35c37e9983ea47aab02d6d119085f25` — **15** occurrences
+  - `app.api.v1.admin_accounts._iso` — `backend\app\api\v1\admin_accounts.py:40`
+  - `app.api.v1.admin_dealer_settlements._iso` — `backend\app\api\v1\admin_dealer_settlements.py:36`
+  - `app.api.v1.admin_legal._iso` — `backend\app\api\v1\admin_legal.py:28`
+  - `app.api.v1.admin_mini_program_config._iso` — `backend\app\api\v1\admin_mini_program_config.py:78`
+  - `app.api.v1.admin_provider_onboarding._iso` — `backend\app\api\v1\admin_provider_onboarding.py:26`
+  - `app.api.v1.admin_sellable_cards._iso` — `backend\app\api\v1\admin_sellable_cards.py:29`
+  - `app.api.v1.admin_service_categories._iso` — `backend\app\api\v1\admin_service_categories.py:31`
+  - `app.api.v1.admin_service_packages._iso` — `backend\app\api\v1\admin_service_packages.py:184`
+  - `app.api.v1.cms._iso` — `backend\app\api\v1\cms.py:56`
+  - `app.api.v1.dealer_sellable_cards._iso` — `backend\app\api\v1\dealer_sellable_cards.py:22`
+  - (truncated) 15 total
+- bodyHash `6212a4d74dad0ae328f905451e811c02a9f2f6a6` — **9** occurrences
+  - `app.api.v1.admin_auth._mask_phone` — `backend\app\api\v1\admin_auth.py:377`
+  - `app.api.v1.admin_notifications._mask_phone` — `backend\app\api\v1\admin_notifications.py:50`
+  - `app.api.v1.admin_users._mask_phone` — `backend\app\api\v1\admin_users.py:31`
+  - `app.api.v1.admin_venues._mask_phone` — `backend\app\api\v1\admin_venues.py:27`
+  - `app.api.v1.auth._mask_phone` — `backend\app\api\v1\auth.py:325`
+  - `app.api.v1.dealer._mask_phone` — `backend\app\api\v1\dealer.py:101`
+  - `app.api.v1.orders._mask_phone` — `backend\app\api\v1\orders.py:301`
+  - `app.api.v1.venues._mask_phone` — `backend\app\api\v1\venues.py:41`
+  - `app.api.v1.website_config._mask_phone` — `backend\app\api\v1\website_config.py:29`
+- bodyHash `0df26185cac60ed2087f9749df03cf4bac48040b` — **6** occurrences
+  - `app.api.v1.admin_ai._idempotency_replay_if_exists` — `backend\app\api\v1\admin_ai.py:67`
+  - `app.api.v1.admin_notifications._idempotency_replay_if_exists` — `backend\app\api\v1\admin_notifications.py:78`
+  - `app.api.v1.admin_service_packages._idempotency_replay_if_exists` — `backend\app\api\v1\admin_service_packages.py:79`
+  - `app.api.v1.bookings._idempotency_replay_if_exists` — `backend\app\api\v1\bookings.py:107`
+  - `app.api.v1.dealer_links._idempotency_replay_if_exists` — `backend\app\api\v1\dealer_links.py:68`
+  - `app.api.v1.entitlements._idempotency_replay_if_exists` — `backend\app\api\v1\entitlements.py:130`
+- bodyHash `0912895ff23c5f062ca7390f90646e0daafbb391` — **6** occurrences
+  - `app.api.v1.admin_notifications._require_idempotency_key` — `backend\app\api\v1\admin_notifications.py:72`
+  - `app.api.v1.ai._require_idempotency_key` — `backend\app\api\v1\ai.py:49`
+  - `app.api.v1.bookings._require_idempotency_key` — `backend\app\api\v1\bookings.py:80`
+  - `app.api.v1.cart._require_idempotency_key` — `backend\app\api\v1\cart.py:41`
+  - `app.api.v1.entitlements._require_idempotency_key` — `backend\app\api\v1\entitlements.py:124`
+  - `app.api.v1.orders._require_idempotency_key` — `backend\app\api\v1\orders.py:271`
+- bodyHash `05512504d58059f436e4e199c61918eae4f06297` — **5** occurrences
+  - `app.api.v1.admin_ai._now_version` — `backend\app\api\v1\admin_ai.py:39`
+  - `app.api.v1.admin_mini_program_config._now_version` — `backend\app\api\v1\admin_mini_program_config.py:73`
+  - `app.api.v1.admin_regions._now_version` — `backend\app\api\v1\admin_regions.py:48`
+  - `app.api.v1.admin_service_package_pricing._now_version` — `backend\app\api\v1\admin_service_package_pricing.py:46`
+  - `app.api.v1.admin_website_config._now_version` — `backend\app\api\v1\admin_website_config.py:50`
+- bodyHash `531223502f7bf8d0e51890f33347fad6716eb64d` — **4** occurrences
+  - `app.api.v1.admin_ai._parse_dt` — `backend\app\api\v1\admin_ai.py:162`
+  - `app.api.v1.audit_logs._parse_dt` — `backend\app\api\v1\audit_logs.py:25`
+  - `app.api.v1.auth._parse_dt` — `backend\app\api\v1\auth.py:334`
+  - `app.api.v1.orders._parse_dt` — `backend\app\api\v1\orders.py:310`
+- bodyHash `d8e6e6446af820665049873819031dc8f426991f` — **3** occurrences
+  - `app.api.v1.admin_ai._require_idempotency_key` — `backend\app\api\v1\admin_ai.py:61`
+  - `app.api.v1.admin_service_packages._require_idempotency_key` — `backend\app\api\v1\admin_service_packages.py:73`
+  - `app.api.v1.dealer_links._require_idempotency_key` — `backend\app\api\v1\dealer_links.py:44`
+- bodyHash `82b3cbe7e5ad887b54abc3ae9e660b2681a6f9e0` — **3** occurrences
+  - `app.api.v1.admin_auth._require_admin_context` — `backend\app\api\v1\admin_auth.py:44`
+  - `app.api.v1.auth._require_admin` — `backend\app\api\v1\auth.py:316`
+  - `app.api.v1.orders._require_admin` — `backend\app\api\v1\orders.py:292`
+- bodyHash `222e82e4d2e52509dc9c68bf3cd5e8330d8c3099` — **3** occurrences
+  - `app.api.v1.admin_notifications._notification_dto` — `backend\app\api\v1\admin_notifications.py:60`
+  - `app.api.v1.dealer_notifications._dto` — `backend\app\api\v1\dealer_notifications.py:25`
+  - `app.api.v1.provider_notifications._dto` — `backend\app\api\v1\provider_notifications.py:25`
+- bodyHash `6bbb0241b07b91e7932dce6665acdb4edf0b4740` — **3** occurrences
+  - `app.api.v1.admin_regions._ensure_json_serializable` — `backend\app\api\v1\admin_regions.py:41`
+  - `app.api.v1.admin_service_package_pricing._ensure_json_serializable` — `backend\app\api\v1\admin_service_package_pricing.py:37`
+  - `app.api.v1.admin_website_config._ensure_json_serializable` — `backend\app\api\v1\admin_website_config.py:43`
+- bodyHash `716e5c4586cd55c5a9fbd76bb07ba28a38169f4e` — **3** occurrences
+  - `app.api.v1.admin_sellable_cards._dto` — `backend\app\api\v1\admin_sellable_cards.py:35`
+  - `app.api.v1.dealer_sellable_cards._dto` — `backend\app\api\v1\dealer_sellable_cards.py:28`
+  - `app.api.v1.sellable_cards._dto` — `backend\app\api\v1\sellable_cards.py:27`
+- bodyHash `ac189ac52096a37e3c20eaaaf404cdc6013f1bd0` — **3** occurrences
+  - `app.api.v1.bookings._try_get_admin_context` — `backend\app\api\v1\bookings.py:92`
+  - `app.api.v1.entitlements._try_get_admin_context` — `backend\app\api\v1\entitlements.py:72`
+  - `app.api.v1.orders._try_get_admin_context` — `backend\app\api\v1\orders.py:277`
+- bodyHash `556babd6afeb38875f5299de6ab08f33340471a6` — **3** occurrences
+  - `app.api.v1.h5_config._get_enabled_value` — `backend\app\api\v1\h5_config.py:53`
+  - `app.api.v1.mini_program_config._get_enabled_config_value` — `backend\app\api\v1\mini_program_config.py:32`
+  - `app.api.v1.website_config._get_enabled_value` — `backend\app\api\v1\website_config.py:38`
+- bodyHash `cd80873f5d302cb892493de1f3ba749fb0027a81` — **2** occurrences
+  - `app.api.v1.admin_dealer_settlements._mask_account_no` — `backend\app\api\v1\admin_dealer_settlements.py:58`
+  - `app.api.v1.dealer._mask_account_no` — `backend\app\api\v1\dealer.py:138`
+- bodyHash `717a6bdbfd4094c9e9ea340e309ec600227d1085` — **2** occurrences
+  - `app.api.v1.admin_entitlement_transfers._parse_dt_utc_naive` — `backend\app\api\v1\admin_entitlement_transfers.py:27`
+  - `app.api.v1.admin_redemptions._parse_dt_utc_naive` — `backend\app\api\v1\admin_redemptions.py:27`
+- bodyHash `1505c7a70e4e9f71087e0602f1bb1c42d82f7f8a` — **2** occurrences
+  - `app.api.v1.admin_service_categories._dto` — `backend\app\api\v1\admin_service_categories.py:37`
+  - `app.api.v1.service_categories._dto` — `backend\app\api\v1\service_categories.py:27`
+- bodyHash `14a4909f61190c3d9db105ac87afa2c5c1e19676` — **2** occurrences
+  - `app.api.v1.bookings._user_context_from_authorization` — `backend\app\api\v1\bookings.py:86`
+  - `app.api.v1.entitlements._user_context_from_authorization` — `backend\app\api\v1\entitlements.py:87`
+- bodyHash `0707ed43d2c3bcc1365a6527a2f17c4526e09bcf` — **2** occurrences
+  - `app.api.v1.cart._idempotency_replay_if_exists` — `backend\app\api\v1\cart.py:51`
+  - `app.api.v1.orders._idempotency_replay_if_exists` — `backend\app\api\v1\orders.py:377`
+- bodyHash `0d15ad9a483488a086e1341be7c7de0c7a433a70` — **2** occurrences
+  - `app.api.v1.dealer._require_admin_context` — `backend\app\api\v1\dealer.py:54`
+  - `app.api.v1.dealer_links._require_admin_context` — `backend\app\api\v1\dealer_links.py:103`
+- bodyHash `3ca3e925f8a3cc16b685d87d03ccf45cfc8ab28f` — **2** occurrences
+  - `app.api.v1.entitlements._voucher_code_v1` — `backend\app\api\v1\entitlements.py:159`
+  - `app.services.entitlement_generation._voucher_code_v1` — `backend\app\services\entitlement_generation.py:36`
+- bodyHash `95705e2815e4491de36ce8305793ce74f4eff44f` — **2** occurrences
+  - `app.utils.db._in_pytest` — `backend\app\utils\db.py:20`
+  - `app.utils.redis_client._in_pytest` — `backend\app\utils\redis_client.py:18`

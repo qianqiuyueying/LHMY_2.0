@@ -1,0 +1,24 @@
+<!--pages/booking/venue-select/venue-select.wxml-->
+<view class="container">
+  <view class="venues-list">
+    <view 
+      class="venue-card card {{selectedVenueId === item.id ? 'selected' : ''}}"
+      wx:for="{{venues}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onVenueTap"
+    >
+      <image class="venue-image" src="{{item.coverImageUrlAbs || '/images/placeholder.png'}}" mode="aspectFill"></image>
+      <view class="venue-info">
+        <text class="venue-name">{{item.name}}</text>
+        <text class="venue-address">{{item.address}}</text>
+        <text class="venue-region">{{item.cityName || ''}}</text>
+      </view>
+      <image class="select-icon" src="/icons/check.png" wx:if="{{selectedVenueId === item.id}}" mode="aspectFit"></image>
+    </view>
+  </view>
+
+  <view class="empty-state" wx:if="{{!loading && venues.length === 0}}">
+    <text>暂无可用场所</text>
+  </view>
+</view>

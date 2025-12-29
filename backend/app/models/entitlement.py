@@ -31,8 +31,8 @@ class Entitlement(Base):
     entitlement_type: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
-        default=EntitlementType.VOUCHER.value,
-        comment="类型：VOUCHER/SERVICE_PACKAGE",
+        default=EntitlementType.SERVICE_PACKAGE.value,
+        comment="类型：SERVICE_PACKAGE",
     )
 
     service_type: Mapped[str] = mapped_column(String(64), nullable=False, comment="服务类目标识")

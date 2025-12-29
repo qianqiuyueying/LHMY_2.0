@@ -27,6 +27,8 @@ router = APIRouter(tags=["mini-program-config"])
 _KEY_ENTRIES = "MINI_PROGRAM_ENTRIES"
 _KEY_PAGES = "MINI_PROGRAM_PAGES"
 _KEY_COLLECTIONS = "MINI_PROGRAM_COLLECTIONS"
+_KEY_HOME_RECOMMENDED_VENUES = "MINI_PROGRAM_HOME_RECOMMENDED_VENUES"
+_KEY_HOME_RECOMMENDED_PRODUCTS = "MINI_PROGRAM_HOME_RECOMMENDED_PRODUCTS"
 
 
 async def _get_enabled_config_value(key: str) -> dict | None:
@@ -34,12 +36,127 @@ async def _get_enabled_config_value(key: str) -> dict | None:
     async with session_factory() as session:
         cfg = (
             await session.scalars(
-                select(SystemConfig).where(SystemConfig.key == key, SystemConfig.status == CommonEnabledStatus.ENABLED.value).limit(1)
+                select(SystemConfig)
+                .where(SystemConfig.key == key, SystemConfig.status == CommonEnabledStatus.ENABLED.value)
+                .limit(1)
             )
         ).first()
     if cfg is None:
         return None
     return cfg.value_json or {}
+
+
+@router.get("/mini-program/home/recommended-venues")
+async def mini_program_get_home_recommended_venues(request: Request):
+    """小程序首页推荐场所（可运营配置）。
+
+    口径：
+    - 若配置未启用/不存在：返回空列表（enabled=false）
+    - 仅返回 publish_status=PUBLISHED 的场所
+    """
+    raw = await _get_enabled_config_value(_KEY_HOME_RECOMMENDED_VENUES)
+    if raw is None:
+        return ok(data={"enabled": False, "items": [], "version": "0"}, request_id=request.state.request_id)
+
+    version = str(raw.get("version") or "0")
+    items = raw.get("items") or []
+    if not isinstance(items, list):
+        items = []
+    venue_ids: list[str] = []
+    for x in items:
+        if isinstance(x, dict) and x.get("venueId"):
+            venue_ids.append(str(x.get("venueId")))
+    if not venue_ids:
+        return ok(data={"enabled": True, "items": [], "version": version}, request_id=request.state.request_id)
+
+    # 延迟 import：避免循环依赖
+    from app.models.venue import Venue  # noqa: WPS433
+    from app.models.enums import VenuePublishStatus  # noqa: WPS433
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        venues = (
+            await session.scalars(
+                select(Venue).where(Venue.id.in_(venue_ids), Venue.publish_status == VenuePublishStatus.PUBLISHED.value)
+            )
+        ).all()
+    by_id = {v.id: v for v in venues}
+    out_items: list[dict] = []
+    for vid in venue_ids:
+        v = by_id.get(vid)
+        if v is None:
+            continue
+        out_items.append(
+            {
+                "id": v.id,
+                "name": v.name,
+                "coverImageUrl": getattr(v, "cover_image_url", None),
+                "cityCode": v.city_code,
+                "provinceCode": v.province_code,
+                "countryCode": v.country_code,
+                "address": v.address,
+                "tags": v.tags,
+            }
+        )
+
+    return ok(data={"enabled": True, "items": out_items, "version": version}, request_id=request.state.request_id)
+
+
+@router.get("/mini-program/home/recommended-products")
+async def mini_program_get_home_recommended_products(request: Request):
+    """小程序首页推荐商品（可运营配置）。
+
+    口径：
+    - 若配置未启用/不存在：返回空列表（enabled=false）
+    - 仅返回 status=ON_SALE 的商品
+    """
+    raw = await _get_enabled_config_value(_KEY_HOME_RECOMMENDED_PRODUCTS)
+    if raw is None:
+        return ok(data={"enabled": False, "items": [], "version": "0"}, request_id=request.state.request_id)
+
+    version = str(raw.get("version") or "0")
+    items = raw.get("items") or []
+    if not isinstance(items, list):
+        items = []
+    product_ids: list[str] = []
+    for x in items:
+        if isinstance(x, dict) and x.get("productId"):
+            product_ids.append(str(x.get("productId")))
+    if not product_ids:
+        return ok(data={"enabled": True, "items": [], "version": version}, request_id=request.state.request_id)
+
+    from app.models.product import Product  # noqa: WPS433
+    from app.models.enums import ProductStatus, ProductFulfillmentType  # noqa: WPS433
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        rows = (
+            await session.scalars(
+                select(Product).where(
+                    Product.id.in_(product_ids),
+                    Product.status == ProductStatus.ON_SALE.value,
+                    Product.fulfillment_type.in_([ProductFulfillmentType.SERVICE.value, ProductFulfillmentType.PHYSICAL_GOODS.value]),
+                )
+            )
+        ).all()
+    by_id = {p.id: p for p in rows}
+    out_items: list[dict] = []
+    for pid in product_ids:
+        p = by_id.get(pid)
+        if p is None:
+            continue
+        out_items.append(
+            {
+                "id": p.id,
+                "title": p.title,
+                "fulfillmentType": p.fulfillment_type,
+                "coverImageUrl": p.cover_image_url,
+                "price": p.price or {},
+                "tags": p.tags,
+            }
+        )
+
+    return ok(data={"enabled": True, "items": out_items, "version": version}, request_id=request.state.request_id)
 
 
 @router.get("/mini-program/entries")
@@ -181,4 +298,3 @@ async def mini_program_get_collection_items(
         data={"items": page_items, "page": page, "pageSize": page_size, "total": total},
         request_id=request.state.request_id,
     )
-

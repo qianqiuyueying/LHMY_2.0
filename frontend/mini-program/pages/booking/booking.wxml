@@ -1,0 +1,65 @@
+<!--pages/booking/booking.wxml-->
+<view class="container">
+  <button class="create-btn" bindtap="onCreateBooking">
+    {{entitlementId ? '创建预约' : '从权益发起预约'}}
+  </button>
+
+  <!-- 状态筛选（事实清单：预约列表支持状态筛选） -->
+  <view class="filter-bar">
+    <text
+      class="filter-item {{statusFilter === null ? 'active' : ''}}"
+      bindtap="onStatusFilterTap"
+      data-status="{{null}}"
+    >全部</text>
+    <text
+      class="filter-item {{statusFilter === 'PENDING' ? 'active' : ''}}"
+      bindtap="onStatusFilterTap"
+      data-status="PENDING"
+    >待确认</text>
+    <text
+      class="filter-item {{statusFilter === 'CONFIRMED' ? 'active' : ''}}"
+      bindtap="onStatusFilterTap"
+      data-status="CONFIRMED"
+    >已确认</text>
+    <text
+      class="filter-item {{statusFilter === 'CANCELLED' ? 'active' : ''}}"
+      bindtap="onStatusFilterTap"
+      data-status="CANCELLED"
+    >已取消</text>
+  </view>
+
+  <!-- 预约列表 -->
+  <view class="bookings-list">
+    <view 
+      class="booking-card card"
+      wx:for="{{bookings}}"
+      wx:key="id"
+    >
+      <view class="booking-header">
+        <text class="venue-name">{{item.venueName}}</text>
+        <text class="booking-status {{item.status === 'CONFIRMED' ? 'confirmed' : item.status === 'PENDING' ? 'pending' : 'cancelled'}}">
+          {{item.status === 'CONFIRMED' ? '已确认' : item.status === 'PENDING' ? '待确认' : '已取消'}}
+        </text>
+      </view>
+      <view class="booking-info">
+        <text>服务：{{item.serviceType}}</text>
+        <text>日期：{{item.bookingDate}}</text>
+        <text>时段：{{item.timeSlot}}</text>
+      </view>
+      <view class="booking-actions">
+        <button 
+          class="btn btn-secondary" 
+          bindtap="onCancelBooking"
+          data-id="{{item.id}}"
+          wx:if="{{item.status === 'PENDING' || item.status === 'CONFIRMED'}}"
+        >
+          取消预约
+        </button>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty-state" wx:if="{{!loading && bookings.length === 0}}">
+    <text>暂无预约</text>
+  </view>
+</view>

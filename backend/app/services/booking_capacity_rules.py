@@ -30,4 +30,3 @@ def release_capacity(*, remaining_capacity: int, capacity: int) -> int:
     if cap < 0:
         cap = 0
     return min(cap, rc + 1)
-

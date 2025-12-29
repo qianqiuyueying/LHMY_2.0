@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: lhmy
+          MYSQL_USER: lhmy
+          MYSQL_PASSWORD: lhmy
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    env:
+      APP_ENV: test
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_USER: lhmy
+      MYSQL_PASSWORD: lhmy
+      MYSQL_DATABASE: lhmy
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      RUN_INTEGRATION_TESTS: "1"
+      # 测试环境可使用默认密钥；生产请通过 Secret 注入
+      JWT_SECRET: change_me_jwt_secret
+      JWT_SECRET_ADMIN: change_me_jwt_secret_admin
+      JWT_SECRET_PROVIDER: change_me_jwt_secret_provider
+      DEALER_SIGN_SECRET: change_me_dealer_sign_secret
+      ENTITLEMENT_QR_SIGN_SECRET: change_me_entitlement_qr_sign_secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: python -m pip install --upgrade pip uv
+
+      - name: Install dependencies (uv)
+        run: uv sync --all-groups --frozen
+
+      - name: Install mysql client (for alembic wait)
+        run: sudo apt-get update && sudo apt-get install -y mysql-client
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 60); do
+            mysqladmin ping -h 127.0.0.1 -uroot -proot && exit 0
+            sleep 2
+          done
+          echo "MySQL did not become ready in time" >&2
+          exit 1
+
+      - name: Run migrations
+        run: uv run alembic -c backend/alembic.ini upgrade head
+
+      - name: Lint (black)
+        run: uv run black --check backend/app backend/tests
+
+      - name: Lint (flake8)
+        run: uv run flake8 backend/app backend/tests
+
+      - name: Type check (mypy)
+        run: uv run mypy backend/app
+
+      - name: Tests (pytest)
+        run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install deps + lint + typecheck (admin)
+        working-directory: frontend/admin
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+
+      - name: Install deps + lint + typecheck (h5)
+        working-directory: frontend/h5
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+
+      - name: Install deps + lint + typecheck (website)
+        working-directory: frontend/website
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+

@@ -1,0 +1,18 @@
+<view class="tabbar">
+  <view
+    class="tabbar-item {{index === selected ? 'is-active' : ''}}"
+    wx:for="{{list}}"
+    wx:key="pagePath"
+    data-path="{{item.pagePath}}"
+    data-index="{{index}}"
+    bindtap="onTap"
+  >
+    <image 
+      class="tabbar-icon" 
+      src="{{index === selected ? item.selectedIconPath : item.iconPath}}" 
+      mode="aspectFit"
+      lazy-load="{{false}}"
+    ></image>
+    <text class="tabbar-text">{{item.text}}</text>
+  </view>
+</view>

@@ -18,7 +18,9 @@ class Admin(Base):
     __tablename__ = "admins"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="管理员ID")
-    username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True, comment="登录用户名（唯一）")
+    username: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True, comment="登录用户名（唯一）"
+    )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False, comment="密码哈希（bcrypt）")
 
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE", comment="状态：ACTIVE/SUSPENDED")
@@ -32,4 +34,3 @@ class Admin(Base):
         onupdate=datetime.utcnow,
         comment="更新时间",
     )
-

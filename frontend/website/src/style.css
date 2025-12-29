@@ -1,0 +1,84 @@
+:root {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #0f172a;
+  background: #ffffff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #f8fafc;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 容器宽度：响应式基础（阶段13-69.3） */
+.container {
+  width: 100%;
+  max-width: 1280px;
+  padding: 0 16px;
+  margin: 0 auto;
+}
+
+@media (min-width: 1440px) {
+  .container {
+    padding: 0 24px;
+  }
+}
+
+.muted {
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.section {
+  padding: 48px 0;
+}
+
+/* Naive UI：统一“圆角卡片 + 轻阴影” */
+.n-card {
+  border-radius: 16px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+.n-card:hover {
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.10);
+}
+
+/* Alert 视觉统一（克制） */
+.n-alert {
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+/* 可访问性：触控高度基线 */
+.n-button {
+  min-height: 40px;
+}
+
+/* 轻量氛围背景（无外部图片） */
+.section-alt {
+  background: radial-gradient(1200px 600px at 10% 10%, rgba(20, 184, 166, 0.10), transparent 60%),
+    radial-gradient(900px 500px at 90% 0%, rgba(15, 118, 110, 0.10), transparent 55%),
+    #f8fafc;
+}
+
+@media (max-width: 640px) {
+  .section {
+    padding: 28px 0;
+  }
+}

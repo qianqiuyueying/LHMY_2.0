@@ -16,6 +16,11 @@ services:
       - --default-authentication-plugin=mysql_native_password
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   redis:
     image: redis:7-alpine
@@ -25,6 +30,11 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -36,6 +46,11 @@ services:
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"
       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   backend:
     build:
@@ -46,23 +61,92 @@ services:
     env_file:
       - ./.env
     depends_on:
-      - mysql
-      - redis
-      - rabbitmq
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "${BACKEND_PORT:-8000}:8000"
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # 首次启动/清库后需要跑 Alembic 迁移；此处在容器启动时自动执行，避免出现“表不存在”导致 500
+    command:
+      [
+        "sh",
+        "-c",
+        "i=0; until alembic upgrade head; do i=$$((i+1)); if [ $$i -ge 30 ]; then echo 'alembic upgrade head failed' >&2; exit 1; fi; echo 'waiting for mysql, retrying alembic...' >&2; sleep 2; done; exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3).read(); print('ok')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: lhmy_celery_worker
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    command: ["celery", "-A", "app.celery_app:celery_app", "worker", "-l", "info"]
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: lhmy_celery_beat
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    command: ["celery", "-A", "app.celery_app:celery_app", "beat", "-l", "info"]
 
   nginx:
-    image: nginx:1.27-alpine
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+      args:
+        # Vite build-time env for website
+        VITE_API_BASE: ${VITE_API_BASE:-/api}
     container_name: lhmy_nginx
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "${NGINX_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
     volumes:
+      # allow overriding nginx conf without rebuilding the image
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # production https certs (mount from host)
+      - ./nginx/certs:/etc/nginx/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/api/v1/health/live >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
 volumes:
   mysql_data:

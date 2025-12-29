@@ -1,0 +1,77 @@
+<!--pages/mall/cart/cart.wxml-->
+<view class="container">
+  <view class="loading-state" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+
+  <!-- 收货地址（仅当选择项包含物流商品时显示） -->
+  <view class="card address-card" wx:if="{{!loading && cartItems.length > 0 && needShipping}}">
+    <view class="address-main" bindtap="onChooseAddress">
+      <view class="address-title">
+        <text>收货地址</text>
+        <text class="address-hint">{{selectedAddressId ? '点击更换' : '请选择'}}</text>
+      </view>
+      <view wx:if="{{selectedAddress}}">
+        <view class="address-row">
+          <text class="address-name">{{selectedAddress.receiverName}}</text>
+          <text class="address-phone">{{selectedAddress.receiverPhone}}</text>
+          <text class="badge" wx:if="{{selectedAddress.isDefault}}">默认</text>
+        </view>
+        <view class="address-line">{{selectedAddress.addressLine}}</view>
+      </view>
+      <view wx:else class="address-empty">
+        <text>未选择收货地址</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="cart-list" wx:if="{{!loading && cartItems.length > 0}}">
+    <view 
+      class="cart-item card"
+      wx:for="{{cartItems}}"
+      wx:key="id"
+    >
+      <view 
+        class="checkbox {{selectedItems.indexOf(item.id) > -1 ? 'checked' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onToggleSelect"
+      >
+        <text wx:if="{{selectedItems.indexOf(item.id) > -1}}">✓</text>
+      </view>
+      <view class="media-placeholder media-placeholder--thumb item-media"></view>
+      <view class="item-info">
+        <text class="item-name">{{item.title}}</text>
+        <view class="item-price-row">
+          <text class="price-symbol">¥</text>
+          <text class="price-value">{{item.price}}</text>
+        </view>
+      </view>
+      <view class="quantity-control">
+        <text class="quantity-btn" data-id="{{item.id}}" bindtap="onQuantityDecrease">-</text>
+        <text class="quantity-value">{{item.quantity}}</text>
+        <text class="quantity-btn" data-id="{{item.id}}" bindtap="onQuantityIncrease">+</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty-cart" wx:else>
+    <text>购物车是空的</text>
+  </view>
+</view>
+
+<!-- 底部结算栏 -->
+<view class="bottom-cta-bar is-space-between" wx:if="{{cartItems.length > 0}}">
+  <view class="select-all" bindtap="onToggleSelectAll">
+    <view 
+      class="checkbox {{selectedItems.length === cartItems.length && cartItems.length > 0 ? 'checked' : ''}}"
+    >
+      <text wx:if="{{selectedItems.length === cartItems.length && cartItems.length > 0}}">✓</text>
+    </view>
+    <text>全选</text>
+  </view>
+  <view class="total-section">
+    <text class="total-label">合计：</text>
+    <text class="total-amount">¥{{totalAmount}}</text>
+  </view>
+  <button class="btn btn-primary" bindtap="onCheckout" disabled="{{selectedItems.length === 0}}">去结算</button>
+</view>

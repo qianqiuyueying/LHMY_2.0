@@ -1,0 +1,157 @@
+/* pages/mall/product-detail/product-detail.wxss */
+
+.container {
+  padding-bottom: 120rpx;
+}
+
+/* 商品头图（无图占位） */
+.product-hero {
+  margin: 20rpx;
+  height: 520rpx;
+}
+
+.hero-image {
+  width: 100%;
+  height: 520rpx;
+  border-radius: var(--r-card);
+  display: block;
+  background: #f1f5f9;
+}
+
+.hero-image--single {
+  margin: 20rpx;
+}
+
+/* 商品信息 */
+.product-info {
+  margin-top: 20rpx;
+}
+
+.product-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: var(--c-text);
+  display: block;
+  margin-bottom: 20rpx;
+}
+
+.price-section {
+  margin-bottom: 20rpx;
+}
+
+.price-row {
+  display: flex;
+  align-items: baseline;
+  margin-bottom: 8rpx;
+}
+
+.price-symbol {
+  font-size: 28rpx;
+  color: var(--c-accent);
+}
+
+.price-value {
+  font-size: 48rpx;
+  font-weight: bold;
+  color: var(--c-accent);
+  margin-right: 12rpx;
+}
+
+.price-type {
+  font-size: 24rpx;
+  color: var(--c-accent);
+  background: rgba(255, 176, 32, 0.14);
+  padding: 4rpx 12rpx;
+  border-radius: 4rpx;
+}
+
+.original-price {
+  font-size: 28rpx;
+  color: var(--c-text-3);
+  text-decoration: line-through;
+}
+
+.product-tags {
+  display: flex;
+  gap: 8rpx;
+}
+
+.tag {
+  font-size: 24rpx;
+  color: var(--c-primary);
+  background: var(--c-primary-weak);
+  padding: 4rpx 12rpx;
+  border-radius: 4rpx;
+}
+
+/* 商品详情 */
+.product-detail,
+.after-sale {
+  margin-top: 20rpx;
+}
+
+.detail-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-bottom: 16rpx;
+}
+
+.detail-content {
+  font-size: 28rpx;
+  color: var(--c-text-2);
+  line-height: 1.6;
+}
+
+/* 底部操作栏：使用全局 bottom-cta-bar */
+
+.quantity-selector {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.quantity-label {
+  font-size: 28rpx;
+  margin-right: 12rpx;
+}
+
+.quantity-control {
+  display: flex;
+  align-items: center;
+  border: 1rpx solid #e0e0e0;
+  border-radius: var(--r-btn);
+  overflow: hidden;
+}
+
+.quantity-btn {
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  color: #333;
+}
+
+.quantity-value {
+  width: 92rpx;
+  text-align: center;
+  font-size: 28rpx;
+  border-left: 1rpx solid #e0e0e0;
+  border-right: 1rpx solid #e0e0e0;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 20rpx;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.action-buttons .btn {
+  flex: 1;
+  min-width: 0;
+  padding-left: 18rpx;
+  padding-right: 18rpx;
+}

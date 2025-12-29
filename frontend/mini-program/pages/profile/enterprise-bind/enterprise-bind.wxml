@@ -1,0 +1,51 @@
+<!--pages/profile/enterprise-bind/enterprise-bind.wxml-->
+<view class="container">
+  <view class="card">
+    <view class="form-item">
+      <text class="label">所在城市</text>
+      <picker
+        mode="selector"
+        range="{{cities}}"
+        range-key="name"
+        value="{{cityIndex}}"
+        bindchange="onCityChange"
+      >
+        <view class="picker">
+          <text class="picker-text">{{selectedCityName || '请选择城市'}}</text>
+        </view>
+      </picker>
+      <view class="hint" wx:if="{{!selectedCityCode}}">
+        <text>企业绑定需要明确选择城市（用于审核与口径一致）。</text>
+      </view>
+    </view>
+
+    <view class="form-item">
+      <text class="label">企业名称</text>
+      <input 
+        class="input" 
+        placeholder="请输入企业名称" 
+        value="{{enterpriseName}}"
+        bindinput="onEnterpriseNameInput"
+      />
+    </view>
+
+    <!-- 匹配建议 -->
+    <view class="suggestions" wx:if="{{showSuggestions && suggestions.length > 0}}">
+      <view 
+        class="suggestion-item"
+        wx:for="{{suggestions}}"
+        wx:key="id"
+        data-item="{{item}}"
+        bindtap="onSelectSuggestion"
+      >
+        <text>{{item.name}}</text>
+      </view>
+    </view>
+
+    <view class="hint">
+      <text>提交后需要等待平台审核，审核通过后您将获得员工身份并享受员工价优惠</text>
+    </view>
+  </view>
+
+  <button class="submit-btn" bindtap="onSubmit">确认绑定</button>
+</view>

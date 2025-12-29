@@ -22,9 +22,15 @@ def _manual(price: dict) -> float:
         {
             # original 必须存在
             "original": st.floats(min_value=0, max_value=1_000_000, allow_nan=False, allow_infinity=False),
-            "employee": st.one_of(st.none(), st.floats(min_value=0, max_value=1_000_000, allow_nan=False, allow_infinity=False)),
-            "member": st.one_of(st.none(), st.floats(min_value=0, max_value=1_000_000, allow_nan=False, allow_infinity=False)),
-            "activity": st.one_of(st.none(), st.floats(min_value=0, max_value=1_000_000, allow_nan=False, allow_infinity=False)),
+            "employee": st.one_of(
+                st.none(), st.floats(min_value=0, max_value=1_000_000, allow_nan=False, allow_infinity=False)
+            ),
+            "member": st.one_of(
+                st.none(), st.floats(min_value=0, max_value=1_000_000, allow_nan=False, allow_infinity=False)
+            ),
+            "activity": st.one_of(
+                st.none(), st.floats(min_value=0, max_value=1_000_000, allow_nan=False, allow_infinity=False)
+            ),
         }
     )
 )

@@ -1,0 +1,166 @@
+<!--pages/index/index.wxml-->
+<view class="container">
+  <!-- 顶部：定位和搜索 -->
+  <view class="header">
+    <view class="search-box">
+      <image class="search-icon" src="/icons/search.png" mode="aspectFit" bindtap="onSearch"></image>
+      <input
+        class="search-input"
+        placeholder="搜索商品/场所"
+        value="{{searchKeyword}}"
+        bindinput="onSearchInput"
+        bindfocus="onSearch"
+        bindconfirm="onSearchConfirm"
+        confirm-type="search"
+      />
+    </view>
+  </view>
+
+  <!-- 错误态 / 空态：避免首页静默空白 -->
+  <view class="state-wrap" wx:if="{{pageState === 'error'}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载失败</view>
+      <view class="state-desc">{{pageErrorMessage || '暂时无法加载首页内容，请稍后重试。'}}</view>
+      <view class="state-actions">
+        <button class="btn btn-primary" bindtap="onRetryTap">重试</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="state-wrap" wx:elif="{{pageState === 'ready' && pageEmptyHint}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">暂无内容</view>
+      <view class="state-desc">{{pageEmptyHint}}</view>
+      <view class="state-actions">
+        <button class="btn btn-ghost" bindtap="onRetryTap">刷新</button>
+      </view>
+    </view>
+  </view>
+
+  <view wx:elif="{{pageState === 'loading'}}" class="state-wrap">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载中</view>
+      <view class="state-desc">正在为你准备内容…</view>
+    </view>
+  </view>
+
+  <view wx:else>
+  <!-- Banner轮播：若配置了 iconUrl 则展示图片，否则使用占位块 + 文案 -->
+  <swiper class="banner-swiper" indicator-dots="true" autoplay="true" interval="3000" duration="500">
+    <swiper-item wx:for="{{banners}}" wx:key="id">
+      <!-- 兜底：部分端上 swiper 内层 view 的 tap 可能不触发，直接在 swiper-item 上也绑一次 -->
+      <view class="banner-wrap" data-item="{{item}}" bindtap="onBannerTap" catchtap="onBannerTap">
+        <image
+          wx:if="{{item.imageUrlAbs && !bannerImageError[item.id]}}"
+          class="banner-image"
+          src="{{item.imageUrlAbs}}"
+          mode="aspectFill"
+          bindtap="onBannerTap"
+          catchtap="onBannerTap"
+          bindload="onBannerImageLoad"
+          binderror="onBannerImageError"
+          data-item="{{item}}"
+        ></image>
+        <view wx:else class="media-placeholder media-placeholder--banner">
+          <text class="media-placeholder-text">{{item.name || '运营位'}}</text>
+        </view>
+      </view>
+    </swiper-item>
+  </swiper>
+
+  <!-- 快捷入口 -->
+  <view class="entries-section">
+    <view class="entries-header">
+      <view class="entries-title">快捷入口</view>
+      <view class="entries-more" wx:if="{{hasMoreEntries}}" bindtap="onMoreEntriesTap">更多</view>
+    </view>
+    <view class="entries-grid">
+      <view
+        class="entry-item" 
+        wx:for="{{entries}}" 
+        wx:key="id"
+        data-item="{{item}}"
+        bindtap="onEntryTap"
+      >
+        <view class="entry-icon">
+          <image wx:if="{{item.iconUrlAbs}}" class="entry-icon-img" src="{{item.iconUrlAbs}}" mode="aspectFit"></image>
+          <view wx:else class="media-placeholder entry-icon-placeholder"></view>
+        </view>
+        <text class="entry-name">{{item.name || '入口'}}</text>
+      </view>
+      <view class="entry-item entry-item--more" wx:if="{{hasMoreEntries}}" bindtap="onMoreEntriesTap">
+        <view class="entry-icon media-placeholder entry-icon--more"></view>
+        <text class="entry-name">更多入口</text>
+      </view>
+    </view>
+    <!-- 兜底：当后台未配置快捷入口时，仍给出“客服与帮助”可行动入口（原型含“客服”） -->
+    <view class="entries-fallback card" wx:if="{{entries.length === 0}}">
+      <view class="entries-fallback-title">暂无快捷入口</view>
+      <view class="entries-fallback-actions">
+        <button class="btn btn-ghost" bindtap="onSupportTap">客服与帮助</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 推荐商品 -->
+  <view class="section">
+    <view class="section-title">推荐商品</view>
+    <scroll-view class="products-scroll" scroll-x="true">
+      <view 
+        class="product-card" 
+        wx:for="{{recommendedProducts}}" 
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="onProductTap"
+      >
+        <image wx:if="{{item.coverImageUrlAbs}}" class="product-image" src="{{item.coverImageUrlAbs}}" mode="aspectFill"></image>
+        <view wx:else class="media-placeholder media-placeholder--square"></view>
+        <view class="product-info">
+          <text class="product-name">{{item.title}}</text>
+          <view class="product-price">
+            <text class="price-symbol">¥</text>
+          <text class="price-value">{{item.displayPrice || 0}}</text>
+          </view>
+        <view class="product-tags">
+          <text class="tag-pill" wx:if="{{item.hasActivityPrice}}">活动价</text>
+          <text class="tag-pill" wx:if="{{item.hasMemberPrice}}">会员价</text>
+          <text class="tag-pill" wx:if="{{item.hasEmployeePrice}}">员工价</text>
+        </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- 推荐场所 -->
+  <view class="section">
+    <view class="section-title">推荐场所</view>
+    <view class="venues-list">
+      <view 
+        class="venue-card card" 
+        wx:for="{{recommendedVenues}}" 
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="onVenueTap"
+      >
+        <image wx:if="{{item.coverImageUrlAbs}}" class="venue-image" src="{{item.coverImageUrlAbs}}" mode="aspectFill"></image>
+        <view wx:else class="media-placeholder media-placeholder--thumb"></view>
+        <view class="venue-info">
+          <text class="venue-name">{{item.nameDisplay || item.name}}</text>
+          <text class="venue-region" wx:if="{{item.cityName}}">{{item.cityName}}</text>
+          <view class="venue-tags">
+            <text class="tag-pill" wx:for="{{item.tags || []}}" wx:key="*this">{{item}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- AI旋钮（悬浮按钮） -->
+  <view class="ai-button {{showAiButton ? 'show' : ''}}" bindtap="onAiButtonTap">
+    <image class="ai-icon" src="/icons/ai-button.png" mode="aspectFit"></image>
+  </view>
+  </view>
+</view>

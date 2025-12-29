@@ -1,0 +1,73 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/mall/mall",
+    "pages/search/search",
+    "pages/mall/product-detail/product-detail",
+    "pages/mall/cart/cart",
+    "pages/address/address-list/address-list",
+    "pages/address/address-edit/address-edit",
+    "pages/entitlement/entitlement",
+    "pages/entitlement/entitlement-detail/entitlement-detail",
+    "pages/booking/booking",
+    "pages/booking/venue-select/venue-select",
+    "pages/booking/date-slot-select/date-slot-select",
+    "pages/booking/booking-result/booking-result",
+    "pages/order/order",
+    "pages/order/order-detail/order-detail",
+    "pages/legal/agreement/agreement",
+    "pages/profile/profile",
+    "pages/profile/profile-edit/profile-edit",
+    "pages/profile/enterprise-bind/enterprise-bind",
+    "pages/support/support",
+    "pages/ai-chat/ai-chat",
+    "pages/venue-detail/venue-detail",
+    "pages/aggregate/aggregate",
+    "pages/info/info",
+    "pages/index/entries-more/entries-more",
+    "pages/webview/webview"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#fff",
+    "navigationBarTitleText": "陆合铭云健康",
+    "navigationBarTextStyle": "black",
+    "enablePullDownRefresh": false
+  },
+  "tabBar": {
+    "color": "#7A7E83",
+    "selectedColor": "#3cc51f",
+    "borderStyle": "black",
+    "backgroundColor": "#ffffff",
+    "custom": true,
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/mall/mall",
+        "text": "商城"
+      },
+      {
+        "pagePath": "pages/entitlement/entitlement",
+        "text": "权益"
+      },
+      {
+        "pagePath": "pages/order/order",
+        "text": "订单"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
+      }
+    ]
+  },
+  "networkTimeout": {
+    "request": 10000,
+    "downloadFile": 10000
+  },
+  "debug": false,
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

@@ -1,0 +1,187 @@
+/* pages/mall/cart/cart.wxss */
+
+.container {
+  padding-bottom: 120rpx;
+}
+
+.cart-list {
+  padding: 20rpx;
+}
+
+.address-card {
+  margin: 20rpx;
+  padding: 18rpx;
+}
+
+.address-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 28rpx;
+  margin-bottom: 10rpx;
+  color: #222;
+}
+
+.address-hint {
+  font-size: 24rpx;
+  color: rgba(0,0,0,.45);
+}
+
+.address-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.address-name {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.address-phone {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.address-line {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  color: #333;
+  line-height: 1.5;
+}
+
+.address-empty {
+  padding: 10rpx 0;
+  color: #999;
+  font-size: 26rpx;
+}
+
+.badge {
+  font-size: 22rpx;
+  color: var(--c-primary);
+  background: var(--c-primary-weak);
+  padding: 4rpx 10rpx;
+  border-radius: 999rpx;
+}
+
+.cart-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.checkbox {
+  width: 56rpx;
+  height: 56rpx;
+  border: 2rpx solid #e0e0e0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 20rpx;
+}
+
+.checkbox.checked {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+
+.item-media {
+  margin-right: 20rpx;
+}
+
+.item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.item-name {
+  font-size: 28rpx;
+  color: #333;
+  margin-bottom: 12rpx;
+}
+
+.item-price-row {
+  color: var(--c-accent);
+}
+
+.price-symbol {
+  font-size: 24rpx;
+}
+
+.price-value {
+  font-size: 32rpx;
+  font-weight: bold;
+}
+
+.quantity-control {
+  display: flex;
+  align-items: center;
+  border: 1rpx solid #e0e0e0;
+  border-radius: 8rpx;
+}
+
+.quantity-btn {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+}
+
+.quantity-value {
+  width: 60rpx;
+  text-align: center;
+  font-size: 28rpx;
+  border-left: 1rpx solid #e0e0e0;
+  border-right: 1rpx solid #e0e0e0;
+}
+
+.empty-cart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  font-size: 28rpx;
+  color: #999;
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  font-size: 28rpx;
+  color: #999;
+}
+
+/* 底部结算栏 */
+/* 底部结算栏使用全局 bottom-cta-bar */
+
+.select-all {
+  display: flex;
+  align-items: center;
+  margin-right: 20rpx;
+}
+
+.total-section {
+  flex: 1;
+  text-align: right;
+  margin-right: 20rpx;
+}
+
+.total-label {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.total-amount {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: var(--c-accent);
+}
+
+/* CTA 按钮使用全局 btn */

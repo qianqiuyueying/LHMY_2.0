@@ -1,0 +1,73 @@
+/* pages/support/support.wxss */
+
+.container {
+  min-height: 100vh;
+}
+
+.content {
+  padding: 20rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--c-text);
+  margin-bottom: 20rpx;
+}
+
+.section-desc {
+  font-size: 28rpx;
+  line-height: 1.6;
+  color: var(--c-text-2);
+}
+
+.empty-hint {
+  font-size: 28rpx;
+  color: var(--c-text-3);
+  padding: 12rpx 0;
+}
+
+.faq-item {
+  padding: 20rpx 0;
+  border-top: 1rpx solid rgba(148, 163, 184, 0.22);
+}
+
+.faq-item:first-child {
+  border-top: none;
+}
+
+.faq-q {
+  display: flex;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.q-text {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--c-text);
+  flex: 1;
+}
+
+.q-action {
+  font-size: 26rpx;
+  color: var(--c-primary);
+  flex-shrink: 0;
+}
+
+.faq-a {
+  padding-top: 14rpx;
+}
+
+.a-text {
+  font-size: 28rpx;
+  line-height: 1.7;
+  color: var(--c-text-2);
+}
+
+.actions {
+  margin-top: 20rpx;
+  display: flex;
+  gap: 16rpx;
+}
+

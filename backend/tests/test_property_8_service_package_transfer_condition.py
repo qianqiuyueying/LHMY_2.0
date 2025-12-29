@@ -27,8 +27,11 @@ from app.services.entitlement_transfer_rules import EntitlementCounts, can_trans
     ),
     success_redemption_count=st.integers(min_value=0, max_value=20),
 )
-def test_property_8_service_package_transfer_condition(entitlements: list[tuple[int, int]], success_redemption_count: int):
+def test_property_8_service_package_transfer_condition(
+    entitlements: list[tuple[int, int]], success_redemption_count: int
+):
     counts = [EntitlementCounts(remaining_count=r, total_count=t) for (r, t) in entitlements]
     expected = (success_redemption_count == 0) and all(r == t for (r, t) in entitlements)
-    assert can_transfer_service_package(entitlements=counts, success_redemption_count=success_redemption_count) is expected
-
+    assert (
+        can_transfer_service_package(entitlements=counts, success_redemption_count=success_redemption_count) is expected
+    )

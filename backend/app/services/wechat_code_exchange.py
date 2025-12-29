@@ -65,7 +65,9 @@ async def exchange_wechat_code(*, code: str) -> WechatCodeExchangeResult:
 
         if not isinstance(data, dict) or not data.get("openid"):
             raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "微信登录失败"})
-        return WechatCodeExchangeResult(openid=str(data["openid"]), unionid=str(data["unionid"]) if data.get("unionid") else None)
+        return WechatCodeExchangeResult(
+            openid=str(data["openid"]), unionid=str(data["unionid"]) if data.get("unionid") else None
+        )
 
     # 直连微信接口
     if not settings.wechat_appid.strip() or not settings.wechat_secret.strip():
@@ -89,7 +91,9 @@ async def exchange_wechat_code(*, code: str) -> WechatCodeExchangeResult:
 
     # 微信失败：通常返回 {"errcode":..., "errmsg":...}
     if not isinstance(data, dict) or data.get("errcode"):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "微信登录失败", "details": data})
+        raise HTTPException(
+            status_code=401, detail={"code": "UNAUTHENTICATED", "message": "微信登录失败", "details": data}
+        )
 
     openid = data.get("openid")
     if not openid:
@@ -97,4 +101,3 @@ async def exchange_wechat_code(*, code: str) -> WechatCodeExchangeResult:
 
     unionid = data.get("unionid")
     return WechatCodeExchangeResult(openid=str(openid), unionid=str(unionid) if unionid else None)
-

@@ -1,0 +1,26 @@
+groups:
+  - name: lhmy_backend_basic
+    rules:
+      - alert: LHMYBackendDown
+        expr: up{job="lhmy_backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LHMY backend 服务不可用"
+          description: "Prometheus 在过去 1 分钟内无法抓取 backend /metrics。"
+
+      - alert: LHMYBackendHigh5xxRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="lhmy_backend",status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total{job="lhmy_backend"}[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LHMY backend 5xx 比例过高"
+          description: "过去 5 分钟 5xx 占比 > 5%。"
+

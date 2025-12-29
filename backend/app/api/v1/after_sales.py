@@ -3,7 +3,7 @@
 规格来源：
 - specs/health-services-platform/design.md -> AfterSaleCase/Refund 模型
 - specs/health-services-platform/design.md -> E-2 admin 售后仲裁 decide（v1 最小契约）
-- specs/health-services-platform/design.md -> 属性 4：未核销退款规则（虚拟券）
+- specs/health-services-platform/design.md -> 属性 4：未核销退款规则
 - specs/health-services-platform/tasks.md -> 阶段8-47/48/49
 
 说明（v1）：
@@ -19,30 +19,23 @@ from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.models.after_sale_case import AfterSaleCase
-from app.models.enums import AfterSaleDecision, AfterSaleStatus, AfterSaleType
+from app.models.audit_log import AuditLog
+from app.models.enums import AuditAction, AuditActorType, AfterSaleDecision, AfterSaleStatus, AfterSaleType
 from app.models.order import Order
 from app.services.refund_service import execute_full_refund_for_order
 from app.utils.db import get_session_factory
-from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
 from app.utils.jwt_token import decode_and_validate_user_token
-from app.utils.redis_client import get_redis
 from app.utils.response import ok
+from app.api.v1.deps import require_admin, require_admin_phone_bound
+from app.services.rbac import ActorContext
+from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
 router = APIRouter(tags=["after-sales"])
-
-
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
 
 
 def _require_user(authorization: str | None) -> dict:
@@ -50,14 +43,6 @@ def _require_user(authorization: str | None) -> dict:
     payload = decode_and_validate_user_token(token=token)
     return payload
 
-
-async def _require_admin(authorization: str | None) -> dict:
-    token = _extract_bearer_token(authorization)
-    payload = decode_and_validate_admin_token(token=token)
-    redis = get_redis()
-    if await redis.exists(token_blacklist_key(jti=str(payload["jti"]))):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return payload
 
 
 class AfterSaleCaseDTO(BaseModel):
@@ -164,7 +149,7 @@ async def create_after_sale_case(
 @router.get("/admin/after-sales")
 async def admin_list_after_sales(
     request: Request,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
     type: Literal["RETURN", "REFUND", "AFTER_SALE_SERVICE"] | None = None,
     status: Literal["SUBMITTED", "UNDER_REVIEW", "DECIDED", "CLOSED"] | None = None,
     dateFrom: str | None = None,
@@ -172,7 +157,7 @@ async def admin_list_after_sales(
     page: int = 1,
     pageSize: int = 20,
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     page = max(1, int(page))
     page_size = max(1, min(100, int(pageSize)))
@@ -191,7 +176,9 @@ async def admin_list_after_sales(
                 return datetime.fromisoformat(raw + "T00:00:00")
             return datetime.fromisoformat(raw)
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "时间参数不合法"}) from exc
+            raise HTTPException(
+                status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "时间参数不合法"}
+            ) from exc
 
     if dateFrom:
         stmt = stmt.where(AfterSaleCase.created_at >= _parse_dt(str(dateFrom)))
@@ -222,10 +209,9 @@ async def admin_decide_after_sale(
     request: Request,
     id: str,
     body: AdminDecideAfterSaleBody,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin_phone_bound),
 ):
-    admin_payload = await _require_admin(authorization)
-    admin_id = str(admin_payload["sub"])
+    admin_id = str(_admin.sub)
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -233,19 +219,37 @@ async def admin_decide_after_sale(
         if c is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "售后单不存在"})
 
-        # 规格：仅允许 UNDER_REVIEW 裁决
-        if c.status != AfterSaleStatus.UNDER_REVIEW.value:
-            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "售后单状态不允许裁决"})
-
         # 裁决写入
         try:
             decision = AfterSaleDecision(str(body.decision))
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "decision 不合法"}) from exc
+            raise HTTPException(
+                status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "decision 不合法"}
+            ) from exc
+
+        # 状态机幂等口径（你已拍板）
+        # - 已 CLOSED 且 decision 相同：200 no-op（不重复退款/不重复写审计）
+        # - 已 CLOSED 但 decision 不同：409 INVALID_STATE_TRANSITION
+        # - 非 UNDER_REVIEW：409 INVALID_STATE_TRANSITION
+        if c.status == AfterSaleStatus.CLOSED.value:
+            if str(c.decision or "") == str(decision.value):
+                return ok(data=_dto(c), request_id=request.state.request_id)
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "INVALID_STATE_TRANSITION", "message": "售后单状态不允许裁决"},
+            )
+        if c.status != AfterSaleStatus.UNDER_REVIEW.value:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "INVALID_STATE_TRANSITION", "message": "售后单状态不允许裁决"},
+            )
+
+        before_status = str(c.status)
+        before_decision = str(c.decision or "")
 
         c.decided_by = admin_id
         c.decision = decision.value
-        c.decision_notes = (body.decisionNotes.strip() if body.decisionNotes else None)
+        c.decision_notes = body.decisionNotes.strip() if body.decisionNotes else None
         c.status = AfterSaleStatus.DECIDED.value
 
         if decision == AfterSaleDecision.APPROVE:
@@ -263,7 +267,33 @@ async def admin_decide_after_sale(
 
         # v1 最小：裁决后即视为闭环（DECIDED -> CLOSED）
         c.status = AfterSaleStatus.CLOSED.value
+
+        # 业务审计（必做）：action 统一 UPDATE；metadata 记录 decision + before/after
+        session.add(
+            AuditLog(
+                id=str(uuid4()),
+                actor_type=AuditActorType.ADMIN.value,
+                actor_id=admin_id,
+                action=AuditAction.UPDATE.value,
+                resource_type="AFTER_SALES",
+                resource_id=str(c.id),
+                summary=f"ADMIN 售后裁决（{decision.value}）",
+                ip=getattr(getattr(request, "client", None), "host", None),
+                user_agent=request.headers.get("User-Agent"),
+                metadata_json={
+                    "requestId": request.state.request_id,
+                    "afterSaleId": str(c.id),
+                    "orderId": str(c.order_id),
+                    "userId": str(c.user_id),
+                    "decision": str(decision.value),
+                    "beforeStatus": before_status,
+                    "afterStatus": str(c.status),
+                    "beforeDecision": before_decision,
+                    "afterDecision": str(c.decision or ""),
+                },
+            )
+        )
+
         await session.commit()
 
     return ok(data=_dto(c), request_id=request.state.request_id)
-

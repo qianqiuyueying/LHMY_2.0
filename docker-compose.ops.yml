@@ -1,0 +1,42 @@
+services:
+  # 数据库备份/恢复（v1 最小可执行）
+  #
+  # 使用示例：
+  # - 备份：docker compose -f docker-compose.yml -f docker-compose.ops.yml run --rm mysql_backup
+  # - 恢复：docker compose -f docker-compose.yml -f docker-compose.ops.yml run --rm -e BACKUP_FILE=/backups/<file>.sql mysql_restore
+  mysql_backup:
+    image: mysql:8.0
+    depends_on:
+      - mysql
+    env_file:
+      - ./.env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-lhmy}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lhmy}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./backups/mysql:/backups
+      - ./ops/backup/mysql:/ops:ro
+    entrypoint: ["bash", "/ops/backup.sh"]
+
+  mysql_restore:
+    image: mysql:8.0
+    depends_on:
+      - mysql
+    env_file:
+      - ./.env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-lhmy}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lhmy}
+      # BACKUP_FILE 需由调用方传入（容器内路径，如 /backups/xxx.sql）
+    volumes:
+      - ./backups/mysql:/backups
+      - ./ops/backup/mysql:/ops:ro
+    entrypoint: ["bash", "/ops/restore.sh"]
+

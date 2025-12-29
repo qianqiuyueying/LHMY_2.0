@@ -93,4 +93,3 @@ def filter_venues_by_entitlement(
             venue_city_code=v.region.city_code,
         )
     ]
-

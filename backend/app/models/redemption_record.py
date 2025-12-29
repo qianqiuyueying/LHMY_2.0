@@ -47,7 +47,9 @@ class RedemptionRecord(Base):
 
     operator_id: Mapped[str] = mapped_column(String(36), nullable=False, comment="操作人ID")
 
-    redemption_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="核销时间")
+    redemption_time: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, comment="核销时间"
+    )
     service_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="服务完成时间")
 
     notes: Mapped[str | None] = mapped_column(String(1024), nullable=True, comment="备注")

@@ -5,7 +5,7 @@
 - specs/health-services-platform/tasks.md -> 阶段4-25.4
 
 v1 最小断言：
-- 对任意订单类型（PRODUCT/VIRTUAL_VOUCHER/SERVICE_PACKAGE），系统能给出确定的履约流程路由结果。
+- 对任意订单类型（PRODUCT/SERVICE_PACKAGE），系统能给出确定的履约流程路由结果。
 """
 
 from __future__ import annotations
@@ -23,11 +23,8 @@ def test_property_3_fulfillment_flow_routing(order_type: OrderType):
 
     if order_type == OrderType.PRODUCT:
         assert flow == FulfillmentFlow.SERVICE
-    elif order_type == OrderType.VIRTUAL_VOUCHER:
-        assert flow == FulfillmentFlow.VOUCHER
     elif order_type == OrderType.SERVICE_PACKAGE:
         assert flow == FulfillmentFlow.SERVICE_PACKAGE
     else:
         # StrEnum 理论上不会到这里
         assert False
-

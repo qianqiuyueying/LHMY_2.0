@@ -40,7 +40,9 @@ def _voucher_code_v1() -> str:
 def _build_qr_payload_v1(*, secret: str, entitlement_id: str, voucher_code: str, now_ts: int) -> str:
     nonce = uuid4().hex
     sign = sign_payload(secret=secret, entitlement_id=entitlement_id, voucher_code=voucher_code, ts=now_ts, nonce=nonce)
-    return build_payload_text(entitlement_id=entitlement_id, voucher_code=voucher_code, ts=now_ts, nonce=nonce, sign=sign)
+    return build_payload_text(
+        entitlement_id=entitlement_id, voucher_code=voucher_code, ts=now_ts, nonce=nonce, sign=sign
+    )
 
 
 def _valid_window_from_paid_at(paid_at: datetime) -> tuple[datetime, datetime]:
@@ -59,15 +61,17 @@ async def _ensure_not_generated_yet(*, session, order_id: str) -> bool:
 async def generate_entitlements_after_payment_succeeded(*, session, order_id: str, qr_sign_secret: str) -> int:
     """按订单类型生成权益。
 
-返回：本次生成的 entitlement 数量（幂等重复调用返回 0）。
-"""
+    返回：本次生成的 entitlement 数量（幂等重复调用返回 0）。
+    """
 
     o: Order | None = (await session.scalars(select(Order).where(Order.id == order_id).limit(1))).first()
     if o is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在"})
 
     if o.paid_at is None:
-        raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "订单未支付成功，无法生成权益"})
+        raise HTTPException(
+            status_code=409, detail={"code": "STATE_CONFLICT", "message": "订单未支付成功，无法生成权益"}
+        )
 
     if await _ensure_not_generated_yet(session=session, order_id=o.id):
         return 0
@@ -75,7 +79,9 @@ async def generate_entitlements_after_payment_succeeded(*, session, order_id: st
     try:
         order_type = OrderType(o.order_type)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "orderType 不合法"}) from exc
+        raise HTTPException(
+            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "orderType 不合法"}
+        ) from exc
 
     items: list[OrderItem] = (await session.scalars(select(OrderItem).where(OrderItem.order_id == o.id))).all()
     if not items:
@@ -85,70 +91,25 @@ async def generate_entitlements_after_payment_succeeded(*, session, order_id: st
     valid_from, valid_until = _valid_window_from_paid_at(o.paid_at)
 
     created = 0
-    if order_type == OrderType.VIRTUAL_VOUCHER:
-        # v1 约束：用 productId 作为 serviceType（稳定 code），与 VenueService.serviceType 口径保持一致
-        product_ids = [x.item_id for x in items]
-        products = (await session.scalars(select(Product).where(Product.id.in_(product_ids)))).all()
-        product_map = {p.id: p for p in products}
-
-        for it in items:
-            if it.item_type != OrderItemType.VIRTUAL_VOUCHER.value:
-                continue
-
-            p = product_map.get(it.item_id)
-            if p is None:
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "商品不存在，无法生成权益"})
-
-            for _ in range(int(it.quantity)):
-                entitlement_id = str(uuid4())
-                voucher_code = _voucher_code_v1()
-                qr_payload = _build_qr_payload_v1(
-                    secret=qr_sign_secret,
-                    entitlement_id=entitlement_id,
-                    voucher_code=voucher_code,
-                    now_ts=now_ts,
-                )
-                e = Entitlement(
-                    id=entitlement_id,
-                    user_id=o.user_id,
-                    order_id=o.id,
-                    entitlement_type=EntitlementType.VOUCHER.value,
-                    service_type=p.id,
-                    remaining_count=1,
-                    total_count=1,
-                    valid_from=valid_from,
-                    valid_until=valid_until,
-                    applicable_venues=None,
-                    applicable_regions=None,
-                    qr_code=qr_payload,
-                    voucher_code=voucher_code,
-                    status=EntitlementStatus.ACTIVE.value,
-                    service_package_instance_id=None,
-                    owner_id=o.user_id,
-                    activator_id="",
-                    current_user_id=o.user_id,
-                    created_at=datetime.utcnow(),
-                )
-
-                validate_entitlement_shape(
-                    EntitlementShape(owner_id=e.owner_id, qr_code=e.qr_code, voucher_code=e.voucher_code)
-                )
-                session.add(e)
-                created += 1
-
-    elif order_type == OrderType.SERVICE_PACKAGE:
+    if order_type == OrderType.SERVICE_PACKAGE:
         for it in items:
             if it.item_type != OrderItemType.SERVICE_PACKAGE.value:
                 continue
             if not it.service_package_template_id or not it.region_scope or not it.tier:
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "服务包明细缺少必要参数"})
+                raise HTTPException(
+                    status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "服务包明细缺少必要参数"}
+                )
 
             # 拉取模板的“服务类目×次数”
             ps_list: list[PackageService] = (
-                await session.scalars(select(PackageService).where(PackageService.service_package_id == it.service_package_template_id))
+                await session.scalars(
+                    select(PackageService).where(PackageService.service_package_id == it.service_package_template_id)
+                )
             ).all()
             if not ps_list:
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "服务包模板未配置服务类别×次数"})
+                raise HTTPException(
+                    status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "服务包模板未配置服务类别×次数"}
+                )
 
             for _ in range(int(it.quantity)):
                 sp_id = str(uuid4())
@@ -204,9 +165,8 @@ async def generate_entitlements_after_payment_succeeded(*, session, order_id: st
                     created += 1
 
     else:
-        # PRODUCT（服务类订单）在 v1 不生成权益（阶段5仅覆盖虚拟券/服务包）
+        # PRODUCT（服务类订单）在 v1 不生成权益（阶段5仅覆盖服务包）
         return 0
 
     await session.flush()
     return created
-

@@ -1,0 +1,69 @@
+/* pages/booking/date-slot-select/date-slot-select.wxss */
+
+.container {
+  padding: 20rpx;
+  padding-bottom: 120rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-bottom: 24rpx;
+}
+
+.dates-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16rpx;
+}
+
+.date-item {
+  padding: 24rpx;
+  text-align: center;
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: var(--r-btn);
+  font-size: 28rpx;
+  color: var(--c-text);
+}
+
+.date-item.selected {
+  background: var(--c-primary);
+  color: #fff;
+}
+
+.slots-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16rpx;
+}
+
+.slot-item {
+  padding: 24rpx;
+  text-align: center;
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: var(--r-btn);
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.slot-item.selected {
+  background: var(--c-primary);
+  color: #fff;
+}
+
+.slot-item.disabled {
+  background: rgba(148, 163, 184, 0.22);
+  color: var(--c-text-3);
+}
+
+.slot-time {
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+.slot-capacity {
+  font-size: 24rpx;
+}
+
+/* 底部 CTA 使用全局 bottom-cta-bar + btn 样式 */

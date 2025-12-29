@@ -1,0 +1,112 @@
+<!--pages/profile/profile.wxml-->
+<view class="container">
+  <!-- 用户信息卡片 -->
+  <view class="user-card card user-card--hero">
+    <view class="user-header" wx:if="{{hasToken && userInfo}}">
+      <image class="avatar" src="{{userInfo.avatar || '/images/default-avatar.png'}}" mode="aspectFill"></image>
+      <view class="user-info">
+        <view class="top-row">
+          <text class="nickname">{{userInfo.nickname || userInfo.phone || '未设置昵称'}}</text>
+          <button class="mini-action ghost mini-action--hero" bindtap="onGoProfileEdit">个人资料</button>
+        </view>
+        <view class="user-sub">
+          <text class="sub">{{userInfo.phone ? ('手机号：' + userInfo.phone) : '手机号：未绑定'}}</text>
+          <button class="mini-action" wx:if="{{!userInfo.phone}}" bindtap="onBindPhone">去绑定</button>
+        </view>
+        <view class="identities">
+          <text class="identity-tag member" wx:if="{{isMember}}">会员</text>
+          <text class="identity-tag employee" wx:if="{{isEmployee}}">员工</text>
+        </view>
+        <text class="member-validity" wx:if="{{isMember && memberValidUntil}}">
+          会员有效期至：{{memberValidUntil}}
+        </text>
+        <text class="enterprise-name" wx:if="{{isEmployee && enterpriseName}}">
+          企业：{{enterpriseName}}
+        </text>
+      </view>
+    </view>
+    <view class="login-prompt" wx:else>
+      <text>请先登录</text>
+      <button class="login-btn" bindtap="onLogin" loading="{{loginLoading}}" disabled="{{loginLoading}}">
+        {{loginLoading ? '登录中...' : '微信登录'}}
+      </button>
+      <view class="login-legal">
+        <view class="login-agree-row" bindtap="onTapAgreementCheckbox">
+          <view class="login-checkbox {{loginAgreementAccepted ? 'checked' : ''}}"></view>
+          <text class="login-agree-text">
+            我已阅读并同意
+            <text class="login-legal-link" catchtap="onViewLoginAgreement">《服务协议》</text>
+          </text>
+        </view>
+        <text class="login-legal-link" style="margin-left: 12px" bindtap="onCopyDiagnostics">复制诊断信息</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 功能入口 -->
+  <view wx:if="{{hasToken}}">
+    <view class="menu-section-title">账户</view>
+    <view class="menu-list card">
+      <view class="menu-item" bindtap="onGoProfileEdit">
+        <text class="menu-label">个人资料</text>
+        <image class="menu-arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+      </view>
+      <view class="menu-item" bindtap="onEnterpriseBind">
+        <text class="menu-label">企业绑定/员工身份</text>
+        <text class="menu-status" wx:if="{{isEmployee}}">已绑定</text>
+        <image class="menu-arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+      </view>
+    </view>
+
+    <view class="menu-section-title">我的服务</view>
+    <view class="menu-list card">
+      <view class="menu-item" bindtap="onMyEntitlements">
+        <text class="menu-label">我的权益</text>
+        <image class="menu-arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+      </view>
+      <view class="menu-item" bindtap="onMyBookings">
+        <text class="menu-label">我的预约</text>
+        <image class="menu-arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+      </view>
+      <view class="menu-item" bindtap="onMyAddresses">
+        <text class="menu-label">收货地址</text>
+        <image class="menu-arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+      </view>
+    </view>
+
+    <view class="menu-section-title">支持与其他</view>
+    <view class="menu-list card">
+      <view class="menu-item" bindtap="onSupport">
+        <text class="menu-label">客服与帮助</text>
+        <image class="menu-arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+      </view>
+      <view class="menu-item" bindtap="onViewLoginAgreement">
+        <text class="menu-label">服务协议</text>
+        <image class="menu-arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+      </view>
+      <view class="menu-item" bindtap="onCopyDiagnostics">
+        <text class="menu-label">复制诊断信息</text>
+        <image class="menu-arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+      </view>
+    </view>
+
+    <view class="logout-wrap">
+      <button class="logout-btn" bindtap="onLogout">退出登录</button>
+    </view>
+  </view>
+
+  <!-- 登录协议确认弹窗（官方推荐风格：勾选 + 弹窗同意/拒绝 + 可点击协议链接） -->
+  <view wx:if="{{agreementDialogVisible}}" class="dlg-mask" bindtap="onAgreementDecline"></view>
+  <view wx:if="{{agreementDialogVisible}}" class="dlg" catchtap="noop">
+    <view class="dlg-title">服务协议确认</view>
+    <view class="dlg-content">
+      <text>登录前请阅读并同意</text>
+      <text class="dlg-link" bindtap="onViewLoginAgreement">《{{agreementTitle || '服务协议'}}》</text>
+      <text>后继续。</text>
+    </view>
+    <view class="dlg-actions">
+      <button class="dlg-btn ghost" bindtap="onAgreementDecline" disabled="{{agreementAccepting}}">拒绝</button>
+      <button class="dlg-btn primary" bindtap="onAgreementAcceptAndMaybeLogin" loading="{{agreementAccepting}}" disabled="{{agreementAccepting}}">同意</button>
+    </view>
+  </view>
+</view>

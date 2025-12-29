@@ -25,13 +25,16 @@ class AuditLog(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="审计ID")
 
-    actor_type: Mapped[str] = mapped_column(String(32), nullable=False, default=AuditActorType.ADMIN.value, comment="操作者类型")
+    actor_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=AuditActorType.ADMIN.value, comment="操作者类型"
+    )
     actor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="操作者ID")
 
     action: Mapped[str] = mapped_column(String(32), nullable=False, default=AuditAction.CREATE.value, comment="动作")
 
     resource_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="资源类型")
-    resource_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, comment="资源ID")
+    # 资源ID 不一定是 UUID（例如配置 key）；因此长度不能固化为 36
+    resource_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True, comment="资源ID")
 
     summary: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="摘要")
 

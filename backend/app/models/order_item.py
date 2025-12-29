@@ -26,12 +26,12 @@ class OrderItem(Base):
         comment="订单ID",
     )
 
-    # 对应业务对象：商品/虚拟券/服务包模板
+    # 对应业务对象：商品/服务包模板
     item_type: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
         default=OrderItemType.PRODUCT.value,
-        comment="明细类型：PRODUCT/VIRTUAL_VOUCHER/SERVICE_PACKAGE",
+        comment="明细类型：PRODUCT/SERVICE_PACKAGE",
     )
 
     item_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="业务对象ID")
@@ -39,6 +39,7 @@ class OrderItem(Base):
 
     quantity: Mapped[int] = mapped_column(nullable=False, default=1, comment="数量")
     unit_price: Mapped[float] = mapped_column(nullable=False, default=0.0, comment="单价")
+    unit_price_type: Mapped[str] = mapped_column(String(16), nullable=False, default="original", comment="单价来源：activity/member/employee/original")
     total_price: Mapped[float] = mapped_column(nullable=False, default=0.0, comment="总价")
 
     # 健行天下（高端服务卡）购买参数（仅当 itemType=SERVICE_PACKAGE 时适用）

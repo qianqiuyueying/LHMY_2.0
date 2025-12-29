@@ -25,7 +25,9 @@ from app.models.enums import EntitlementStatus, OrderType, PaymentStatus, Redemp
 from app.models.order import Order
 from app.models.redemption_record import RedemptionRecord
 from app.models.refund import Refund
-from app.services.refund_rules import RefundRuleResult, can_refund_unredeemed_virtual_voucher
+from app.services.entitlement_state_machine import assert_entitlement_status_transition
+from app.services.order_state_machine import assert_order_status_transition
+from app.services.refund_rules import RefundRuleResult, can_refund_unredeemed_entitlements
 
 
 @dataclass(frozen=True)
@@ -36,9 +38,7 @@ class RefundApplyResult:
 
 
 async def _count_success_redemptions_for_order(*, session, order_id: str) -> int:
-    entitlement_ids = (
-        await session.scalars(select(Entitlement.id).where(Entitlement.order_id == order_id))
-    ).all()
+    entitlement_ids = (await session.scalars(select(Entitlement.id).where(Entitlement.order_id == order_id))).all()
     if not entitlement_ids:
         return 0
 
@@ -53,12 +53,10 @@ async def _count_success_redemptions_for_order(*, session, order_id: str) -> int
     return int((await session.execute(stmt)).scalar() or 0)
 
 
-async def validate_virtual_voucher_refund_allowed(*, session, order: Order) -> RefundRuleResult:
-    if order.order_type != OrderType.VIRTUAL_VOUCHER.value:
-        return RefundRuleResult(ok=True, error_code=None)
-
+async def validate_unredeemed_refund_allowed(*, session, order: Order) -> RefundRuleResult:
+    # v1：统一按“订单下所有权益是否发生核销”控制退款（成功核销则拒绝）
     redeemed_success_count = await _count_success_redemptions_for_order(session=session, order_id=order.id)
-    return can_refund_unredeemed_virtual_voucher(redeemed_success_count=redeemed_success_count)
+    return can_refund_unredeemed_entitlements(redeemed_success_count=redeemed_success_count)
 
 
 async def execute_full_refund_for_order(*, session, order: Order, reason: str | None = None) -> RefundApplyResult:
@@ -82,7 +80,7 @@ async def execute_full_refund_for_order(*, session, order: Order, reason: str | 
     if order.payment_status != PaymentStatus.PAID.value:
         return RefundApplyResult(ok=False, error_code="STATE_CONFLICT", refund=None)
 
-    rule_res = await validate_virtual_voucher_refund_allowed(session=session, order=order)
+    rule_res = await validate_unredeemed_refund_allowed(session=session, order=order)
     if not rule_res.ok:
         return RefundApplyResult(ok=False, error_code=rule_res.error_code or "REFUND_NOT_ALLOWED", refund=None)
 
@@ -96,16 +94,17 @@ async def execute_full_refund_for_order(*, session, order: Order, reason: str | 
     session.add(refund)
 
     # 订单状态更新：PAID -> REFUNDED
-    await session.execute(
-        update(Order).where(Order.id == order.id).values(payment_status=PaymentStatus.REFUNDED.value)
-    )
+    assert_order_status_transition(current=order.payment_status, target=PaymentStatus.REFUNDED.value)
+    await session.execute(update(Order).where(Order.id == order.id).values(payment_status=PaymentStatus.REFUNDED.value))
 
     # 权益状态更新：ACTIVE -> REFUNDED（v1：不细分 USED/EXPIRED 等；由退款规则确保未核销）
+    entitlements = (await session.scalars(select(Entitlement).where(Entitlement.order_id == order.id))).all()
+    for e in entitlements:
+        if e.status == EntitlementStatus.REFUNDED.value:
+            continue
+        assert_entitlement_status_transition(current=e.status, target=EntitlementStatus.REFUNDED.value)
     await session.execute(
-        update(Entitlement)
-        .where(Entitlement.order_id == order.id)
-        .values(status=EntitlementStatus.REFUNDED.value)
+        update(Entitlement).where(Entitlement.order_id == order.id).values(status=EntitlementStatus.REFUNDED.value)
     )
 
     return RefundApplyResult(ok=True, error_code=None, refund=refund)
-

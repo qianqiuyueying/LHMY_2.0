@@ -48,4 +48,3 @@ async def compute_identities_and_member_valid_until(
     # 规格口径：身份数组可叠加；顺序不作为对外契约，但保持稳定输出有利于联调
     identities = sorted(set(identities))
     return identities, member_valid_until
-

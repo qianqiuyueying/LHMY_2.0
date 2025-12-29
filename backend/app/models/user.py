@@ -29,7 +29,9 @@ class User(Base):
 
     # v1：跨端主键以 unionid 为准；phone 在绑定前可为空
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True, comment="手机号")
-    openid: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True, comment="微信 openid（小程序端必返）")
+    openid: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True, comment="微信 openid（小程序端必返）"
+    )
     unionid: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True, comment="微信 unionid")
 
     nickname: Mapped[str] = mapped_column(String(64), nullable=False, default="", comment="昵称")

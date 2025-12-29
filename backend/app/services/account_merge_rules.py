@@ -26,7 +26,9 @@ class AccountMergeDataset:
     transfer_to_owner_ids: list[str]
 
 
-def apply_account_merge(*, dataset: AccountMergeDataset, source_user_id: str, target_user_id: str) -> AccountMergeDataset:
+def apply_account_merge(
+    *, dataset: AccountMergeDataset, source_user_id: str, target_user_id: str
+) -> AccountMergeDataset:
     """将 source_user_id 的裁决字段迁移到 target_user_id。"""
 
     def _map(ids: list[str]) -> list[str]:
@@ -43,4 +45,3 @@ def apply_account_merge(*, dataset: AccountMergeDataset, source_user_id: str, ta
         transfer_from_owner_ids=_map(dataset.transfer_from_owner_ids),
         transfer_to_owner_ids=_map(dataset.transfer_to_owner_ids),
     )
-

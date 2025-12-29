@@ -1,0 +1,20 @@
+<!-- pages/index/entries-more/entries-more.wxml -->
+<view class="container">
+  <view class="card">
+    <view
+      class="row"
+      wx:for="{{items}}"
+      wx:key="id"
+      data-item="{{item}}"
+      bindtap="onItemTap"
+    >
+      <text class="name">{{item.name || '入口'}}</text>
+      <image class="arrow" src="/icons/arrow-right.png" mode="aspectFit"></image>
+    </view>
+    <view class="empty" wx:if="{{items.length === 0}}">
+      暂无可用入口
+    </view>
+  </view>
+</view>
+
+

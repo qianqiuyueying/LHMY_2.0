@@ -131,6 +131,8 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 return response
 
             action = _infer_action(method=request.method, path=request.url.path)
+            if action is None:
+                return response
             if not _should_audit(request=request, action=action):
                 return response
 
@@ -154,7 +156,9 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 action=action.value,
                 resource_type=str(resource_type),
                 resource_id=str(resource_id) if resource_id else None,
-                summary=_truncate(f"{action.value} {resource_type}{(' ' + str(resource_id)) if resource_id else ''}", 512),
+                summary=_truncate(
+                    f"{action.value} {resource_type}{(' ' + str(resource_id)) if resource_id else ''}", 512
+                ),
                 ip=_truncate(getattr(getattr(request, "client", None), "host", None), 64),
                 user_agent=_truncate(request.headers.get("User-Agent"), 512),
                 metadata_json=meta,
@@ -170,4 +174,3 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             logger.warning("audit_log_failed path=%s err=%s", request.url.path, repr(exc))
 
         return response
-

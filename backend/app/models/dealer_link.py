@@ -24,7 +24,13 @@ class DealerLink(Base):
 
     dealer_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="归属经销商ID")
 
-    product_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="高端服务卡商品ID")
+    # v2.1：链接不再强依赖商品ID（仅需 sellableCardId）；历史字段保留兼容
+    product_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, comment="高端服务卡商品ID（可为空）")
+
+    # v1.2：支持“可售卡配置（sellableCardId）”用于 H5 下单参数解耦（经销商选卡售卖）
+    sellable_card_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True, comment="可售卡ID（sellableCardId，可为空）"
+    )
 
     campaign: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="活动/批次")
 

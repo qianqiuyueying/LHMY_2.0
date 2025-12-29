@@ -1,0 +1,177 @@
+<!--pages/aggregate/aggregate.wxml-->
+<view class="container">
+  <view class="state-wrap" wx:if="{{loading}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载中</view>
+      <view class="state-desc">正在加载页面内容…</view>
+    </view>
+  </view>
+
+  <view class="state-wrap" wx:elif="{{errorMessage}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载失败</view>
+      <view class="state-desc">{{errorMessage}}</view>
+      <view class="state-actions">
+        <button class="btn btn-primary" bindtap="onRetryTap">重试</button>
+        <button class="btn btn-ghost" bindtap="onBackTap">返回</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="state-wrap" wx:elif="{{!pageConfig}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">页面不可用</view>
+      <view class="state-desc">该页面暂时无法打开</view>
+      <view class="state-actions">
+        <button class="btn btn-ghost" bindtap="onBackTap">返回</button>
+      </view>
+    </view>
+  </view>
+
+  <view wx:else>
+    <!-- vNow：导航聚合模式（顶部标签列表 / 侧边栏宫格） -->
+    <view wx:if="{{navMode}}" class="nav-wrap">
+      <!-- 顶部标签 + 列表卡片 -->
+      <view wx:if="{{navLayout === 'TABS_LIST'}}">
+        <scroll-view scroll-x class="nav-l1" show-scrollbar="false">
+          <view
+            class="nav-l1-item {{navL1Index === index ? 'active' : ''}}"
+            wx:for="{{navGroups}}"
+            wx:key="index"
+            data-index="{{index}}"
+            bindtap="onNavL1Tap"
+          >
+            {{item.name}}
+          </view>
+        </scroll-view>
+
+        <scroll-view scroll-x class="nav-l2" show-scrollbar="false">
+          <view
+            class="nav-l2-item {{navL2Index === index ? 'active' : ''}}"
+            wx:for="{{(navGroups[navL1Index] && navGroups[navL1Index].children) ? navGroups[navL1Index].children : []}}"
+            wx:key="index"
+            data-index="{{index}}"
+            bindtap="onNavL2Tap"
+          >
+            {{item.name || '全部'}}
+          </view>
+        </scroll-view>
+
+        <view class="content">
+          <view class="state-wrap" wx:if="{{emptyMessage}}">
+            <view class="state-card">
+              <view class="state-graphic"></view>
+              <view class="state-title">暂无内容</view>
+              <view class="state-desc">{{emptyMessage}}</view>
+            </view>
+          </view>
+
+          <view
+            class="nav-card card"
+            wx:for="{{navItems}}"
+            wx:key="index"
+            data-item="{{item}}"
+            bindtap="onNavItemTap"
+          >
+            <view class="item-info">
+              <text class="item-name">{{item.title}}</text>
+              <text class="item-desc" wx:if="{{item.subtitle}}">{{item.subtitle}}</text>
+            </view>
+            <view class="nav-card-arrow"></view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 侧边栏 + 图标宫格 -->
+      <view wx:else class="nav-grid-layout">
+        <view class="nav-sidebar">
+          <view
+            class="nav-sidebar-item {{navL1Index === index ? 'active' : ''}}"
+            wx:for="{{navGroups}}"
+            wx:key="index"
+            data-index="{{index}}"
+            bindtap="onNavL1Tap"
+          >
+            {{item.name}}
+          </view>
+        </view>
+
+        <view class="content">
+          <view class="state-wrap" wx:if="{{emptyMessage}}">
+            <view class="state-card">
+              <view class="state-graphic"></view>
+              <view class="state-title">暂无内容</view>
+              <view class="state-desc">{{emptyMessage}}</view>
+            </view>
+          </view>
+
+          <view class="grid" wx:else>
+            <view
+              class="grid-item card"
+              wx:for="{{navItems}}"
+              wx:key="index"
+              data-item="{{item}}"
+              bindtap="onNavItemTap"
+            >
+              <image wx:if="{{item.iconUrlAbs}}" class="grid-icon" mode="aspectFill" src="{{item.iconUrlAbs}}" />
+              <view wx:else class="media-placeholder media-placeholder--square"></view>
+              <text class="grid-title">{{item.title}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- legacy：地区侧边栏 + collection 聚合 -->
+    <view wx:else class="aggregate-layout">
+      <!-- 侧边栏 -->
+      <view class="sidebar">
+        <view
+          class="sidebar-item {{selectedRegion === null ? 'active' : ''}}"
+          bindtap="onRegionTap"
+          data-region="{{null}}"
+        >
+          全部
+        </view>
+        <view
+          class="sidebar-item {{selectedRegion === (item.code || item) ? 'active' : ''}}"
+          wx:for="{{pageConfig.regions || []}}"
+          wx:key="*this"
+          data-region="{{item}}"
+          bindtap="onRegionTap"
+        >
+          {{item.name || item}}
+        </view>
+        <view class="sidebar-hint" wx:if="{{regionsEmpty}}">
+          暂无地区可选
+        </view>
+      </view>
+
+      <!-- 内容区 -->
+      <view class="content">
+        <view class="state-wrap" wx:if="{{emptyMessage}}">
+          <view class="state-card">
+            <view class="state-graphic"></view>
+            <view class="state-title">暂无内容</view>
+            <view class="state-desc">{{emptyMessage}}</view>
+          </view>
+        </view>
+
+        <view
+          class="item-card card"
+          wx:for="{{items}}"
+          wx:key="id"
+        >
+          <view class="media-placeholder media-placeholder--thumb"></view>
+          <view class="item-info">
+            <text class="item-name">{{item.name || item.title}}</text>
+            <text class="item-desc" wx:if="{{item.description}}">{{item.description}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

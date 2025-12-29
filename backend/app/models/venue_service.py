@@ -31,7 +31,7 @@ class VenueService(Base):
         String(32),
         nullable=False,
         default=ProductFulfillmentType.SERVICE.value,
-        comment="履约类型：VIRTUAL_VOUCHER/SERVICE",
+        comment="履约类型：SERVICE",
     )
 
     product_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True, comment="关联商品ID")
@@ -41,8 +41,8 @@ class VenueService(Base):
     redemption_method: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
-        default=RedemptionMethod.QR_CODE.value,
-        comment="核销方式：QR_CODE/VOUCHER_CODE",
+        default=RedemptionMethod.BOTH.value,
+        comment="核销方式：QR_CODE/VOUCHER_CODE/BOTH（vNow：默认 BOTH）",
     )
 
     applicable_regions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, comment="适用区域标签")

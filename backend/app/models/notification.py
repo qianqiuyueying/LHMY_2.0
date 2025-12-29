@@ -12,17 +12,24 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.models.enums import NotificationReceiverType, NotificationStatus
+from app.models.enums import NotificationCategory, NotificationReceiverType, NotificationStatus
 
 
 class Notification(Base):
     __tablename__ = "notifications"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="通知ID")
+
+    sender_type: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        comment="发送者类型（v1：手工发送固定 ADMIN；历史系统通知可为空）",
+    )
+    sender_id: Mapped[str | None] = mapped_column(String(36), nullable=True, comment="发送者ID（adminId，可空）")
 
     receiver_type: Mapped[str] = mapped_column(
         String(32),
@@ -35,6 +42,14 @@ class Notification(Base):
 
     title: Mapped[str] = mapped_column(String(256), nullable=False, comment="标题")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="内容")
+
+    category: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=NotificationCategory.SYSTEM.value,
+        comment="类别：SYSTEM/ACTIVITY/OPS",
+    )
+    meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="扩展元数据（JSON，可空）")
 
     status: Mapped[str] = mapped_column(
         String(16),

@@ -17,7 +17,9 @@ from fastapi import HTTPException
 from redis.asyncio import Redis
 
 from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
-from app.utils.jwt_token import decode_and_validate_user_token
+from app.utils.jwt_dealer_token import decode_and_validate_dealer_token
+from app.utils.jwt_provider_token import decode_and_validate_provider_token, token_blacklist_key as provider_token_blacklist_key
+from app.utils.jwt_token import decode_and_validate_user_token, token_blacklist_key as user_token_blacklist_key
 
 
 class ActorType(StrEnum):
@@ -54,11 +56,38 @@ async def parse_actor_from_bearer_token(*, token: str, redis: Redis) -> ActorCon
         # 继续尝试 user
         pass
 
+    # 2) 尝试 provider
+    try:
+        payload = decode_and_validate_provider_token(token=token)
+        jti = str(payload["jti"])
+        if await redis.exists(provider_token_blacklist_key(jti=jti)):
+            raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
+        actor_type = str(payload["actorType"])
+        if actor_type == ActorType.PROVIDER.value:
+            return ActorContext(actor_type=ActorType.PROVIDER, sub=str(payload["sub"]), channel=None)
+        return ActorContext(actor_type=ActorType.PROVIDER_STAFF, sub=str(payload["sub"]), channel=None)
+    except HTTPException:
+        pass
+
+    # 3) 尝试 dealer
+    try:
+        payload = decode_and_validate_dealer_token(token=token)
+        return ActorContext(actor_type=ActorType.DEALER, sub=str(payload["sub"]), channel=None)
+    except HTTPException:
+        pass
+
+    # 4) 尝试 user
     payload = decode_and_validate_user_token(token=token)
-    return ActorContext(actor_type=ActorType.USER, sub=str(payload["sub"]), channel=str(payload.get("channel")) if payload.get("channel") else None)
+    jti = str(payload["jti"])
+    if await redis.exists(user_token_blacklist_key(jti=jti)):
+        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
+    return ActorContext(
+        actor_type=ActorType.USER,
+        sub=str(payload["sub"]),
+        channel=str(payload.get("channel")) if payload.get("channel") else None,
+    )
 
 
 def require_actor_types(*, actor: ActorContext, allowed: set[ActorType]) -> None:
     if actor.actor_type not in allowed:
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "无权限访问"})
-

@@ -41,4 +41,3 @@ def booking_state_on_create(*, confirmation_method: str, now: datetime) -> Booki
         confirmation_method=BookingConfirmationMethod.MANUAL.value,
         confirmed_at=None,
     )
-

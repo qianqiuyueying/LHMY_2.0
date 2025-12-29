@@ -46,4 +46,3 @@ def infer_order_type_from_cart_items(*, items: list[CartSelectedItem]) -> OrderT
         raise ValueError("orderType 与 items.itemType 不一致")
 
     return order_type
-

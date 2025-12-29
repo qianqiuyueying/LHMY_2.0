@@ -11,34 +11,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 
+from app.api.v1.deps import require_admin
 from app.models.audit_log import AuditLog
 from app.utils.db import get_session_factory
-from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
-from app.utils.redis_client import get_redis
 from app.utils.response import ok
 
 router = APIRouter(tags=["admin-audit-logs"])
-
-
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
-
-
-async def _require_admin(authorization: str | None) -> dict:
-    token = _extract_bearer_token(authorization)
-    payload = decode_and_validate_admin_token(token=token)
-    redis = get_redis()
-    if await redis.exists(token_blacklist_key(jti=str(payload["jti"]))):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return payload
 
 
 def _parse_dt(raw: str, *, field_name: str) -> datetime:
@@ -47,7 +28,9 @@ def _parse_dt(raw: str, *, field_name: str) -> datetime:
             return datetime.fromisoformat(raw + "T00:00:00")
         return datetime.fromisoformat(raw)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}) from exc
+        raise HTTPException(
+            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}
+        ) from exc
 
 
 def _mask_sensitive(value: Any) -> Any:
@@ -88,7 +71,6 @@ def _dto(x: AuditLog) -> dict[str, Any]:
 @router.get("/admin/audit-logs")
 async def admin_list_audit_logs(
     request: Request,
-    authorization: str | None = Header(default=None),
     actorType: Literal["ADMIN", "USER", "DEALER", "PROVIDER", "PROVIDER_STAFF"] | None = None,
     actorId: str | None = None,
     action: Literal["CREATE", "UPDATE", "PUBLISH", "OFFLINE", "APPROVE", "REJECT", "LOGIN", "LOGOUT"] | None = None,
@@ -99,9 +81,8 @@ async def admin_list_audit_logs(
     dateTo: str | None = None,
     page: int = 1,
     pageSize: int = 20,
+    _admin=Depends(require_admin),
 ):
-    await _require_admin(authorization)
-
     page = max(1, int(page))
     page_size = max(1, min(100, int(pageSize)))
 
@@ -135,4 +116,3 @@ async def admin_list_audit_logs(
         data={"items": [_dto(x) for x in logs], "page": page, "pageSize": page_size, "total": total},
         request_id=request.state.request_id,
     )
-

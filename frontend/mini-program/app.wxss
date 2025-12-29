@@ -1,0 +1,282 @@
+/**app.wxss**/
+/* 全局样式 */
+
+page {
+  /* ========= Design Tokens（v1 最小，可逐步全站替换） ========= */
+  /* Brand */
+  --c-primary: #17b6a3; /* teal */
+  --c-primary-weak: rgba(23, 182, 163, 0.12);
+  --c-secondary: #0b1f33; /* slate/navy */
+  --c-accent: #ffb020; /* orange/yellow for CTA/price (少量使用) */
+  --c-danger: #ef4444;
+
+  /* Surface */
+  --c-bg: #f6f8fa;
+  --c-surface: #ffffff;
+
+  /* Text */
+  --c-text: #0f172a;
+  --c-text-2: #475569;
+  --c-text-3: #94a3b8;
+
+  /* Radius & shadow */
+  --r-card: 20rpx;
+  --r-btn: 16rpx;
+  --r-pill: 999rpx;
+  --shadow-card: 0 6rpx 18rpx rgba(15, 23, 42, 0.06);
+
+  /* Spacing */
+  --s-1: 16rpx;
+  --s-2: 20rpx;
+  --s-3: 24rpx;
+  --s-4: 32rpx;
+
+  /* Typography */
+  background-color: var(--c-bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-size: 32rpx;
+  color: var(--c-text);
+
+  /* 自定义 TabBar（custom-tab-bar）占位，避免内容被底部栏遮挡 */
+  padding-bottom: 100rpx;
+  padding-bottom: calc(100rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+/* 通用容器 */
+.container {
+  padding: 20rpx;
+}
+
+/* 通用卡片 */
+.card {
+  background: var(--c-surface);
+  border-radius: var(--r-card);
+  padding: var(--s-3);
+  margin-bottom: var(--s-2);
+  box-shadow: var(--shadow-card);
+}
+
+/* 通用按钮 */
+.btn {
+  padding: 24rpx 48rpx;
+  border-radius: var(--r-btn);
+  text-align: center;
+  font-size: 32rpx;
+  min-height: 88rpx; /* >=44px 触控 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.btn-primary {
+  background-color: var(--c-primary);
+  color: #fff;
+}
+
+.btn-secondary {
+  background-color: rgba(148, 163, 184, 0.18);
+  color: var(--c-text);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: var(--c-primary);
+  border: 2rpx solid rgba(23, 182, 163, 0.35);
+}
+
+.btn[disabled] {
+  opacity: 0.55;
+}
+
+/* ========= 底部固定操作栏（统一 CTA） ========= */
+.bottom-cta-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 16rpx 20rpx;
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1rpx solid rgba(148, 163, 184, 0.25);
+  z-index: 100;
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.bottom-cta-bar.is-split .btn {
+  flex: 1;
+}
+
+.bottom-cta-bar.is-space-between {
+  justify-content: space-between;
+}
+
+.bottom-cta-bar .btn {
+  font-size: 28rpx;
+  padding: 18rpx 24rpx;
+  min-height: 88rpx;
+}
+
+/* 通用文本 */
+.text-primary {
+  color: var(--c-primary);
+}
+
+.text-secondary {
+  color: var(--c-text-3);
+}
+
+.text-danger {
+  color: var(--c-danger);
+}
+
+/* 通用布局 */
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-column {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 间距 */
+.mt-10 { margin-top: 20rpx; }
+.mt-20 { margin-top: 40rpx; }
+.mb-10 { margin-bottom: 20rpx; }
+.mb-20 { margin-bottom: 40rpx; }
+.ml-10 { margin-left: 20rpx; }
+.mr-10 { margin-right: 20rpx; }
+
+.p-10 { padding: 20rpx; }
+.p-20 { padding: 40rpx; }
+
+/* ========= 统一状态页（加载/空/错）：几何占位 + 文案 + 行动 ========= */
+.state-wrap {
+  padding: 48rpx 24rpx;
+}
+
+.state-card {
+  background: var(--c-surface);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+  padding: 48rpx 32rpx;
+}
+
+.state-graphic {
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 64rpx;
+  margin: 0 auto 28rpx;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(23, 182, 163, 0.35), rgba(23, 182, 163, 0) 60%),
+    radial-gradient(circle at 70% 70%, rgba(255, 176, 32, 0.25), rgba(255, 176, 32, 0) 60%),
+    linear-gradient(135deg, rgba(23, 182, 163, 0.16), rgba(11, 31, 51, 0.04));
+}
+
+.state-title {
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--c-text);
+  margin-bottom: 12rpx;
+}
+
+.state-desc {
+  text-align: center;
+  font-size: 28rpx;
+  color: var(--c-text-2);
+  line-height: 1.6;
+}
+
+.state-actions {
+  display: flex;
+  gap: 16rpx;
+  justify-content: center;
+  margin-top: 28rpx;
+}
+
+.state-actions .btn {
+  padding: 18rpx 28rpx;
+  font-size: 28rpx;
+}
+
+/* ========= 无图占位块（商品/场所/运营位）：渐变 + 几何 ========= */
+.media-placeholder {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-btn);
+  background:
+    radial-gradient(circle at 20% 30%, rgba(23, 182, 163, 0.35), rgba(23, 182, 163, 0) 55%),
+    radial-gradient(circle at 75% 70%, rgba(255, 176, 32, 0.22), rgba(255, 176, 32, 0) 55%),
+    linear-gradient(135deg, rgba(23, 182, 163, 0.18), rgba(11, 31, 51, 0.06));
+}
+
+.media-placeholder::after {
+  /* 点阵装饰（简洁几何） */
+  content: '';
+  position: absolute;
+  right: -20rpx;
+  top: -20rpx;
+  width: 220rpx;
+  height: 220rpx;
+  background-image: radial-gradient(rgba(11, 31, 51, 0.10) 2rpx, transparent 2rpx);
+  background-size: 18rpx 18rpx;
+  transform: rotate(12deg);
+  opacity: 0.55;
+}
+
+.media-placeholder--square {
+  width: 100%;
+  height: 320rpx;
+}
+
+.media-placeholder--thumb {
+  width: 160rpx;
+  height: 160rpx;
+}
+
+.media-placeholder--banner {
+  width: 100%;
+  height: 360rpx;
+  border-radius: var(--r-card);
+}
+
+.media-placeholder-text {
+  position: absolute;
+  left: 20rpx;
+  bottom: 18rpx;
+  right: 20rpx;
+  color: var(--c-secondary);
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 1.3;
+  opacity: 0.92;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 40rpx;
+  padding: 0 14rpx;
+  border-radius: var(--r-pill);
+  font-size: 22rpx;
+  color: var(--c-primary);
+  background: var(--c-primary-weak);
+}

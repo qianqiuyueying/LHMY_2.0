@@ -26,4 +26,3 @@ def can_transfer_service_package(*, entitlements: list[EntitlementCounts], succe
     if not entitlements:
         return False
     return all(int(x.remaining_count) == int(x.total_count) for x in entitlements)
-

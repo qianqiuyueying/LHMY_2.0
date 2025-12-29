@@ -14,7 +14,7 @@ from sqlalchemy.dialects.mysql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.models.enums import VenuePublishStatus
+from app.models.enums import VenuePublishStatus, VenueReviewStatus
 
 
 class Venue(Base):
@@ -51,6 +51,17 @@ class Venue(Base):
         default=VenuePublishStatus.DRAFT.value,
         comment="发布状态：DRAFT/PUBLISHED/OFFLINE",
     )
+
+    review_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=VenueReviewStatus.DRAFT.value,
+        comment="展示资料审核状态：DRAFT/SUBMITTED/APPROVED/REJECTED",
+    )
+    reject_reason: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="驳回原因（覆盖式）")
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="驳回时间")
+    offline_reason: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="下线原因（覆盖式）")
+    offlined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="下线时间")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(

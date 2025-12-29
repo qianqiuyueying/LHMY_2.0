@@ -1,0 +1,39 @@
+{
+  "name": "admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "typecheck": "vue-tsc -b --noEmit",
+    "lint": "eslint . --ext .ts,.vue --max-warnings 0",
+    "preview": "vite preview",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "echarts": "^6.0.0",
+    "element-plus": "^2.12.0",
+    "markdown-it": "^14.1.0",
+    "vue": "^3.5.24",
+    "vue-echarts": "^8.0.1",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^24.10.1",
+    "@typescript-eslint/eslint-plugin": "^8.50.0",
+    "@typescript-eslint/parser": "^8.50.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/tsconfig": "^0.8.1",
+    "eslint": "^9.39.2",
+    "eslint-plugin-vue": "^10.6.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4",
+    "vue-eslint-parser": "^10.2.0",
+    "vue-tsc": "^3.1.4"
+  }
+}

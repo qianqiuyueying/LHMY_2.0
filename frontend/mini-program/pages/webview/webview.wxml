@@ -1,0 +1,29 @@
+<!-- pages/webview/webview.wxml -->
+<view class="container">
+  <view class="state-wrap" wx:if="{{loading}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载中</view>
+      <view class="state-desc">正在打开页面…</view>
+    </view>
+  </view>
+
+  <view class="state-wrap" wx:elif="{{errorMessage}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">无法打开</view>
+      <view class="state-desc">{{errorMessage}}</view>
+      <view class="state-actions">
+        <button class="btn btn-primary" bindtap="onRetryTap">重试</button>
+        <button class="btn btn-ghost" bindtap="onBackTap">返回</button>
+      </view>
+    </view>
+  </view>
+
+  <web-view
+    wx:else
+    src="{{url}}"
+    bindload="onWebViewLoad"
+    binderror="onWebViewError"
+  ></web-view>
+</view>

@@ -44,6 +44,8 @@ class MiniProgramLoginUser(BaseModel):
     openid: str
     unionid: str | None = None
     phone: str | None = None
+    nickname: str | None = None
+    avatar: str | None = None
     identities: list[Literal["MEMBER", "EMPLOYEE"]]
 
 
@@ -102,6 +104,8 @@ async def mini_program_login(request: Request, body: MiniProgramLoginBody):
                 openid=openid,
                 unionid=user.unionid,
                 phone=user.phone,
+                nickname=user.nickname or None,
+                avatar=user.avatar,
                 identities=identities,  # type: ignore[arg-type]
             ),
         ).model_dump(),
@@ -163,7 +167,9 @@ async def mini_program_bind_phone(request: Request, body: MiniProgramBindPhoneBo
         # Case A：手机号不存在 -> 直接绑定到当前用户
         if phone_user is None:
             current.phone = body.phone
-            identities, _member_valid_until = await compute_identities_and_member_valid_until(session=session, user=current)
+            identities, _member_valid_until = await compute_identities_and_member_valid_until(
+                session=session, user=current
+            )
             current.identities = identities
             await session.commit()
 
@@ -173,8 +179,11 @@ async def mini_program_bind_phone(request: Request, body: MiniProgramBindPhoneBo
                     token=new_token,
                     user=MiniProgramLoginUser(
                         id=current.id,
+                        openid=current.openid,
                         unionid=current.unionid,
                         phone=current.phone,
+                        nickname=current.nickname or None,
+                        avatar=current.avatar,
                         identities=identities,  # type: ignore[arg-type]
                     ),
                 ).model_dump(),
@@ -203,7 +212,9 @@ async def mini_program_bind_phone(request: Request, body: MiniProgramBindPhoneBo
         current.phone = None
 
         # 按规格清单迁移裁决字段（事务内原子更新）
-        await session.execute(update(Entitlement).where(Entitlement.owner_id == source_user_id).values(owner_id=target_user_id))
+        await session.execute(
+            update(Entitlement).where(Entitlement.owner_id == source_user_id).values(owner_id=target_user_id)
+        )
         await session.execute(
             update(ServicePackageInstance)
             .where(ServicePackageInstance.owner_id == source_user_id)
@@ -215,9 +226,7 @@ async def mini_program_bind_phone(request: Request, body: MiniProgramBindPhoneBo
             update(AfterSaleCase).where(AfterSaleCase.user_id == source_user_id).values(user_id=target_user_id)
         )
         await session.execute(
-            update(RedemptionRecord)
-            .where(RedemptionRecord.user_id == source_user_id)
-            .values(user_id=target_user_id)
+            update(RedemptionRecord).where(RedemptionRecord.user_id == source_user_id).values(user_id=target_user_id)
         )
         await session.execute(
             update(EntitlementTransfer)
@@ -248,9 +257,10 @@ async def mini_program_bind_phone(request: Request, body: MiniProgramBindPhoneBo
                 openid=target.openid or "",
                 unionid=target.unionid,
                 phone=target.phone,
+                nickname=target.nickname or None,
+                avatar=target.avatar,
                 identities=identities,  # type: ignore[arg-type]
             ),
         ).model_dump(),
         request_id=request.state.request_id,
     )
-

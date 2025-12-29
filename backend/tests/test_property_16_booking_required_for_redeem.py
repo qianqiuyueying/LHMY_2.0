@@ -26,4 +26,3 @@ def test_property_16_booking_required_gate(booking_required: bool, has_confirmed
         assert ok is has_confirmed_booking
     else:
         assert ok is True
-

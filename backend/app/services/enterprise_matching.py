@@ -53,7 +53,9 @@ class EnterpriseSuggestion:
     city_code: str | None
 
 
-def suggest_enterprises(*, keyword: str, enterprises: list[EnterpriseCandidate], limit: int = 10) -> list[EnterpriseSuggestion]:
+def suggest_enterprises(
+    *, keyword: str, enterprises: list[EnterpriseCandidate], limit: int = 10
+) -> list[EnterpriseSuggestion]:
     """按规格返回匹配建议（最多 10 条）。"""
 
     key = normalize_enterprise_name(keyword)
@@ -84,8 +86,4 @@ def suggest_enterprises(*, keyword: str, enterprises: list[EnterpriseCandidate],
             ranked.append((3, dist, e))
 
     ranked.sort(key=lambda x: (x[0], x[1], x[2].name))
-    return [
-        EnterpriseSuggestion(id=e.id, name=e.name, city_code=e.city_code)
-        for _, __, e in ranked[: max(0, limit)]
-    ]
-
+    return [EnterpriseSuggestion(id=e.id, name=e.name, city_code=e.city_code) for _, __, e in ranked[: max(0, limit)]]

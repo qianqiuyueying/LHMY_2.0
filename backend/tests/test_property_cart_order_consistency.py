@@ -25,7 +25,7 @@ def _safe_id():
 
 
 @given(
-    item_type=st.sampled_from([OrderItemType.PRODUCT, OrderItemType.VIRTUAL_VOUCHER]),
+    item_type=st.sampled_from([OrderItemType.PRODUCT, OrderItemType.SERVICE_PACKAGE]),
     items=st.lists(
         st.tuples(_safe_id(), st.integers(min_value=1, max_value=9999)),
         min_size=1,
@@ -41,8 +41,7 @@ def test_property_1_cart_to_order_type_infer_ok(item_type: OrderItemType, items:
 def test_property_1_cart_to_order_type_infer_reject_mixed():
     cart = [
         CartSelectedItem(item_type=OrderItemType.PRODUCT, item_id="p1", quantity=1),
-        CartSelectedItem(item_type=OrderItemType.VIRTUAL_VOUCHER, item_id="v1", quantity=1),
+        CartSelectedItem(item_type=OrderItemType.SERVICE_PACKAGE, item_id="sp1", quantity=1),
     ]
     with pytest.raises(ValueError):
         infer_order_type_from_cart_items(items=cart)
-

@@ -15,4 +15,3 @@ def can_redeem_with_booking_requirement(*, booking_required: bool, has_confirmed
     if not booking_required:
         return True
     return bool(has_confirmed_booking)
-

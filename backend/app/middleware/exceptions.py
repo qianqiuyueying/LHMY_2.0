@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.utils.response import fail
@@ -17,6 +18,28 @@ from app.utils.response import fail
 
 def _request_id(request: Request) -> str:
     return getattr(request.state, "request_id", "")
+
+
+def _code_from_status(status_code: int) -> str:
+    # v1 最小：把“框架级 HTTP 错误”映射到稳定错误码，避免前端只能看到 HTTP_EXCEPTION
+    if status_code == 400:
+        return "INVALID_ARGUMENT"
+    if status_code == 401:
+        # 统一口径：401 一律使用 UNAUTHENTICATED（与 specs-prod/admin/api-contracts.md#7 一致）
+        return "UNAUTHENTICATED"
+    if status_code == 403:
+        return "FORBIDDEN"
+    if status_code == 404:
+        return "NOT_FOUND"
+    if status_code == 405:
+        return "METHOD_NOT_ALLOWED"
+    if status_code == 409:
+        return "STATE_CONFLICT"
+    if status_code == 429:
+        return "RATE_LIMITED"
+    if 500 <= status_code:
+        return "INTERNAL_ERROR"
+    return "HTTP_EXCEPTION"
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -38,7 +61,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=fail(
-                code="HTTP_EXCEPTION",
+                code=_code_from_status(int(exc.status_code)),
                 message=exc.detail if isinstance(exc.detail, str) else "请求错误",
                 details=exc.detail if not isinstance(exc.detail, str) else None,
                 request_id=_request_id(request),
@@ -66,6 +89,19 @@ def register_exception_handlers(app: FastAPI) -> None:
                 code="INTERNAL_ERROR",
                 message="服务器内部错误",
                 details=None,
+                request_id=_request_id(request),
+            ),
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def integrity_error_handler(request: Request, exc: IntegrityError):
+        # 统一处理数据库唯一约束/外键约束等冲突
+        return JSONResponse(
+            status_code=409,
+            content=fail(
+                code="STATE_CONFLICT",
+                message="资源冲突",
+                details={"db": str(exc.__class__.__name__)},
                 request_id=_request_id(request),
             ),
         )

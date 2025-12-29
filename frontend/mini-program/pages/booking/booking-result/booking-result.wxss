@@ -1,0 +1,77 @@
+/* pages/booking/booking-result/booking-result.wxss */
+
+.container {
+  padding: 40rpx 20rpx;
+}
+
+.result-card {
+  text-align: center;
+  margin-bottom: 40rpx;
+}
+
+.result-icon {
+  width: 120rpx;
+  height: 120rpx;
+  margin: 0 auto 24rpx;
+  display: block;
+}
+
+.result-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #333;
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.result-status {
+  font-size: 28rpx;
+  padding: 8rpx 24rpx;
+  border-radius: 32rpx;
+  display: inline-block;
+}
+
+.result-status.confirmed {
+  background: #f0f9f0;
+  color: #3cc51f;
+}
+
+.result-status.pending {
+  background: #fff0f5;
+  color: #ff69b4;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: 28rpx;
+  color: #666;
+}
+
+.value {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.btn {
+  width: 100%;
+  margin-top: 40rpx;
+  padding: 24rpx;
+  border-radius: 8rpx;
+  border: none;
+  font-size: 32rpx;
+}
+
+.btn-primary {
+  background: #3cc51f;
+  color: #fff;
+}

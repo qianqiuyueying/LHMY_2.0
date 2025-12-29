@@ -1,7 +1,10 @@
 """场所接口（v1 最小可执行）。
 
 规格来源：
-- specs/health-services-platform/design.md -> `GET /api/v1/venues`、`GET /api/v1/venues/{id}`、`GET /api/v1/venues/{id}/available-slots`
+- specs/health-services-platform/design.md ->
+  - `GET /api/v1/venues`
+  - `GET /api/v1/venues/{id}`
+  - `GET /api/v1/venues/{id}/available-slots`
 - specs/health-services-platform/design.md -> 场所模型（Venue/VenueService/VenueSchedule）
 - specs/health-services-platform/tasks.md -> 阶段6-35/36
 
@@ -12,37 +15,36 @@ v1 说明：
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
-from fastapi import APIRouter, Header, HTTPException, Request
-from sqlalchemy import func, or_, select
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from sqlalchemy import or_, select
 
 from app.models.entitlement import Entitlement
 from app.models.enums import CommonEnabledStatus, VenuePublishStatus
 from app.models.venue import Venue
 from app.models.venue_schedule import VenueSchedule
 from app.models.venue_service import VenueService
-from app.services.venue_filtering_rules import VenueLite, VenueRegion, filter_venues_by_entitlement, matches_region_filter
+from app.api.v1.deps import optional_user, require_user
+from app.services.venue_filtering_rules import (
+    VenueLite,
+    VenueRegion,
+    filter_venues_by_entitlement,
+    matches_region_filter,
+)
 from app.utils.db import get_session_factory
-from app.utils.jwt_token import decode_and_validate_user_token
 from app.utils.response import ok
 
 router = APIRouter(tags=["venues"])
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
-
-
-def _user_context_from_authorization(authorization: str | None) -> dict:
-    token = _extract_bearer_token(authorization)
-    payload = decode_and_validate_user_token(token=token)
-    return {"actorType": "USER", "userId": str(payload["sub"]), "channel": str(payload.get("channel", ""))}
+def _mask_phone(phone: str | None) -> str | None:
+    if not phone:
+        return None
+    s = str(phone).strip()
+    if len(s) < 7:
+        return None
+    return f"{s[:3]}****{s[-4:]}"
 
 
 def _venue_list_item_dto(v: Venue) -> dict:
@@ -56,22 +58,30 @@ def _venue_list_item_dto(v: Venue) -> dict:
         "address": v.address,
         "businessHours": v.business_hours,
         "tags": v.tags,
+        "contactPhoneMasked": _mask_phone(v.contact_phone),
     }
 
 
 def _venue_detail_public_dto(v: Venue) -> dict:
     return {
         "id": v.id,
+        "providerId": v.provider_id,
         "name": v.name,
         "logoUrl": v.logo_url,
         "coverImageUrl": v.cover_image_url,
         "imageUrls": v.image_urls,
+        "cityCode": v.city_code,
+        "provinceCode": v.province_code,
+        "countryCode": v.country_code,
         "description": v.description,
         "address": v.address,
         "lat": v.lat,
         "lng": v.lng,
         "businessHours": v.business_hours,
         "tags": v.tags,
+        # 官网/对外展示：场所详情必须可联系（电话明文），列表仍仅返回脱敏字段
+        "contactPhone": (str(v.contact_phone).strip() if v.contact_phone and str(v.contact_phone).strip() else None),
+        "contactPhoneMasked": _mask_phone(v.contact_phone),
     }
 
 
@@ -88,6 +98,7 @@ def _venue_service_dto(vs: VenueService) -> dict:
 async def list_venues(
     request: Request,
     authorization: str | None = Header(default=None),
+    user=Depends(optional_user),
     keyword: str | None = None,
     regionLevel: str | None = None,  # CITY|PROVINCE|COUNTRY
     regionCode: str | None = None,
@@ -121,7 +132,10 @@ async def list_venues(
                 )
             ).all()
             if not vs_venue_ids:
-                return ok(data={"items": [], "page": page, "pageSize": page_size, "total": 0}, request_id=request.state.request_id)
+                return ok(
+                    data={"items": [], "page": page, "pageSize": page_size, "total": 0},
+                    request_id=request.state.request_id,
+                )
             stmt = stmt.where(Venue.id.in_(list(set(vs_venue_ids))))
 
         venues = (await session.scalars(stmt.order_by(Venue.created_at.desc()))).all()
@@ -133,7 +147,9 @@ async def list_venues(
             if matches_region_filter(
                 venue=VenueLite(
                     id=v.id,
-                    region=VenueRegion(country_code=v.country_code, province_code=v.province_code, city_code=v.city_code),
+                    region=VenueRegion(
+                        country_code=v.country_code, province_code=v.province_code, city_code=v.city_code
+                    ),
                 ),
                 region_level=regionLevel,
                 region_code=regionCode,
@@ -142,8 +158,9 @@ async def list_venues(
 
         # 权益过滤：要求登录且 ownerId 为本人
         if entitlementId and entitlementId.strip():
-            user_ctx = _user_context_from_authorization(authorization)
-            user_id = user_ctx["userId"]
+            if user is None:
+                raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
+            user_id = str(user.sub)
 
             e = (
                 await session.scalars(select(Entitlement).where(Entitlement.id == entitlementId.strip()).limit(1))
@@ -151,13 +168,17 @@ async def list_venues(
             if e is None:
                 raise HTTPException(status_code=404, detail={"code": "ENTITLEMENT_NOT_FOUND", "message": "权益不存在"})
             if e.owner_id != user_id:
-                raise HTTPException(status_code=403, detail={"code": "ENTITLEMENT_NOT_OWNED", "message": "无权限访问该权益"})
+                raise HTTPException(
+                    status_code=403, detail={"code": "ENTITLEMENT_NOT_OWNED", "message": "无权限访问该权益"}
+                )
 
             filtered = filter_venues_by_entitlement(
                 venues=[
                     VenueLite(
                         id=v.id,
-                        region=VenueRegion(country_code=v.country_code, province_code=v.province_code, city_code=v.city_code),
+                        region=VenueRegion(
+                            country_code=v.country_code, province_code=v.province_code, city_code=v.city_code
+                        ),
                     )
                     for v in venues
                 ],
@@ -174,7 +195,12 @@ async def list_venues(
         page_items = venues[start:end]
 
     return ok(
-        data={"items": [_venue_list_item_dto(v) for v in page_items], "page": page, "pageSize": page_size, "total": total},
+        data={
+            "items": [_venue_list_item_dto(v) for v in page_items],
+            "page": page,
+            "pageSize": page_size,
+            "total": total,
+        },
         request_id=request.state.request_id,
     )
 
@@ -184,15 +210,11 @@ async def get_venue_detail(
     request: Request,
     id: str,
     authorization: str | None = Header(default=None),
+    user=Depends(optional_user),
     entitlementId: str | None = None,
 ):
-    # 可选登录：登录后允许返回敏感字段（contactPhone）与服务列表（services）
-    user_ctx = None
-    if authorization:
-        try:
-            user_ctx = _user_context_from_authorization(authorization)
-        except HTTPException:
-            user_ctx = None
+    # 可选登录：登录后允许返回服务列表（services）
+    user_ctx = {"userId": str(user.sub)} if user is not None else None
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -207,7 +229,6 @@ async def get_venue_detail(
         data = _venue_detail_public_dto(v)
 
         if user_ctx:
-            data["contactPhone"] = v.contact_phone
             services = (
                 await session.scalars(
                     select(VenueService).where(
@@ -224,14 +245,20 @@ async def get_venue_detail(
                     await session.scalars(select(Entitlement).where(Entitlement.id == entitlementId.strip()).limit(1))
                 ).first()
                 if e is None:
-                    raise HTTPException(status_code=404, detail={"code": "ENTITLEMENT_NOT_FOUND", "message": "权益不存在"})
+                    raise HTTPException(
+                        status_code=404, detail={"code": "ENTITLEMENT_NOT_FOUND", "message": "权益不存在"}
+                    )
                 if e.owner_id != user_ctx["userId"]:
-                    raise HTTPException(status_code=403, detail={"code": "ENTITLEMENT_NOT_OWNED", "message": "无权限访问该权益"})
+                    raise HTTPException(
+                        status_code=403, detail={"code": "ENTITLEMENT_NOT_OWNED", "message": "无权限访问该权益"}
+                    )
                 eligible = filter_venues_by_entitlement(
                     venues=[
                         VenueLite(
                             id=v.id,
-                            region=VenueRegion(country_code=v.country_code, province_code=v.province_code, city_code=v.city_code),
+                            region=VenueRegion(
+                                country_code=v.country_code, province_code=v.province_code, city_code=v.city_code
+                            ),
                         )
                     ],
                     entitlement_type=e.entitlement_type,
@@ -251,10 +278,9 @@ async def get_available_slots(
     id: str,
     serviceType: str,
     date: str,  # YYYY-MM-DD
-    authorization: str | None = Header(default=None),
+    _user=Depends(require_user),
 ):
     # v1：要求 USER 登录（与 design.md 契约对齐）
-    _ = _user_context_from_authorization(authorization)
 
     service_type = (serviceType or "").strip()
     if not service_type:
@@ -287,10 +313,14 @@ async def get_available_slots(
         ).all()
 
     slots = [{"timeSlot": s.time_slot, "remainingCapacity": int(s.remaining_capacity)} for s in schedules]
-    slots.sort(key=lambda x: x["timeSlot"])
+    slots.sort(key=lambda x: str(x["timeSlot"]))
 
     return ok(
-        data={"venueId": id, "serviceType": service_type, "bookingDate": booking_date.strftime("%Y-%m-%d"), "slots": slots},
+        data={
+            "venueId": id,
+            "serviceType": service_type,
+            "bookingDate": booking_date.strftime("%Y-%m-%d"),
+            "slots": slots,
+        },
         request_id=request.state.request_id,
     )
-

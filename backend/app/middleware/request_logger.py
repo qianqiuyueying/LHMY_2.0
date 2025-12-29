@@ -23,12 +23,21 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
         cost_ms = (time.perf_counter() - start) * 1000
 
         rid = getattr(request.state, "request_id", "")
+        actor = getattr(request.state, "actor", None)
+        actor_type = getattr(actor, "actor_type", None)
+        actor_id = getattr(actor, "sub", None)
+        ip = getattr(getattr(request, "client", None), "host", None)
+        ua = request.headers.get("User-Agent")
         logger.info(
-            "request_id=%s method=%s path=%s status=%s cost_ms=%.2f",
+            "request_id=%s method=%s path=%s status=%s cost_ms=%.2f actor_type=%s actor_id=%s ip=%s ua=%s",
             rid,
             request.method,
             request.url.path,
             response.status_code,
             cost_ms,
+            actor_type,
+            actor_id,
+            ip,
+            ua,
         )
         return response

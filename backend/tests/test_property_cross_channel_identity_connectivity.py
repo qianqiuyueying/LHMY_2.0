@@ -66,4 +66,3 @@ def test_property_7_cross_channel_identity_connectivity(
     assert source not in merged.redemption_user_ids
     assert source not in merged.transfer_from_owner_ids
     assert source not in merged.transfer_to_owner_ids
-

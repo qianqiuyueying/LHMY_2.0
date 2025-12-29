@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import jwt
 from fastapi import HTTPException
@@ -22,10 +23,12 @@ from app.utils.settings import settings
 
 def create_user_token(*, user_id: str, channel: str = "H5") -> str:
     now = datetime.now(tz=UTC)
+    jti = str(uuid4())
     payload = {
         "sub": user_id,
         "actorType": "USER",
         "channel": channel,
+        "jti": jti,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=settings.jwt_expire_seconds)).timestamp()),
     }
@@ -40,7 +43,7 @@ def decode_and_validate_user_token(*, token: str, require_channel: str | None = 
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "Token 无效"}) from exc
 
-    if payload.get("actorType") != "USER" or not payload.get("sub"):
+    if payload.get("actorType") != "USER" or not payload.get("sub") or not payload.get("jti"):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "Token 无效"})
 
     if require_channel is not None and payload.get("channel") != require_channel:
@@ -48,3 +51,9 @@ def decode_and_validate_user_token(*, token: str, require_channel: str | None = 
         raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "Token 无效"})
 
     return payload
+
+
+def token_blacklist_key(*, jti: str) -> str:
+    """USER token 黑名单 key（REQ-P0-002）。"""
+
+    return f"token:blacklist:{jti}"

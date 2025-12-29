@@ -34,11 +34,7 @@ def sign_payload(*, secret: str, entitlement_id: str, voucher_code: str, ts: int
 def build_payload_text(*, entitlement_id: str, voucher_code: str, ts: int, nonce: str, sign: str) -> str:
     # 固定顺序输出，便于前端稳定生成二维码文本
     return (
-        f"entitlementId={entitlement_id}"
-        f"&voucherCode={voucher_code}"
-        f"&ts={ts}"
-        f"&nonce={nonce}"
-        f"&sign={sign}"
+        f"entitlementId={entitlement_id}" f"&voucherCode={voucher_code}" f"&ts={ts}" f"&nonce={nonce}" f"&sign={sign}"
     )
 
 
@@ -105,4 +101,3 @@ def verify_payload_text(*, secret: str, payload_text: str, now_ts: int) -> Verif
         return VerifyResult(ok=False, error_code="QR_SIGN_INVALID", parts=parts)
 
     return VerifyResult(ok=True, error_code=None, parts=parts)
-

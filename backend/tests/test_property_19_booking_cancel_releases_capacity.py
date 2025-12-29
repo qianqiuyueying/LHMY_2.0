@@ -29,4 +29,3 @@ def test_property_19_release_capacity_never_exceeds_capacity(capacity: int, rema
         assert new_remaining == remaining + 1
     else:
         assert new_remaining == max(0, min(capacity, remaining))
-

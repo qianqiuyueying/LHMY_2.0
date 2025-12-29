@@ -10,37 +10,19 @@ from __future__ import annotations
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.models.enums import CommonEnabledStatus, TaxonomyType
 from app.models.taxonomy_node import TaxonomyNode
 from app.utils.db import get_session_factory
-from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
-from app.utils.redis_client import get_redis
 from app.utils.response import ok
+from app.api.v1.deps import require_admin
+from app.services.rbac import ActorContext
+from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
 router = APIRouter(tags=["taxonomy-nodes"])
-
-
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
-
-
-async def _require_admin(authorization: str | None) -> dict:
-    token = _extract_bearer_token(authorization)
-    payload = decode_and_validate_admin_token(token=token)
-    redis = get_redis()
-    if await redis.exists(token_blacklist_key(jti=str(payload["jti"]))):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return payload
-
 
 class TaxonomyNodeDTO(BaseModel):
     id: str
@@ -90,10 +72,10 @@ async def list_mini_program_taxonomy_nodes(
 @router.get("/admin/taxonomy-nodes")
 async def admin_list_taxonomy_nodes(
     request: Request,
-    authorization: str | None = Header(default=None),
-    type: Literal["VENUE", "PRODUCT", "CONTENT"] | None = None,
+    _admin: ActorContext = Depends(require_admin),
+    type: Literal["VENUE", "PRODUCT", "CONTENT", "PRODUCT_TAG", "SERVICE_TAG", "VENUE_TAG"] | None = None,
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     stmt = select(TaxonomyNode)
     if type:
@@ -108,7 +90,7 @@ async def admin_list_taxonomy_nodes(
 
 
 class AdminCreateTaxonomyNodeBody(BaseModel):
-    type: Literal["VENUE", "PRODUCT", "CONTENT"] = Field(..., description="节点类型")
+    type: Literal["VENUE", "PRODUCT", "CONTENT", "PRODUCT_TAG", "SERVICE_TAG", "VENUE_TAG"] = Field(..., description="节点类型")
     name: str = Field(..., min_length=1)
     parentId: str | None = None
     sort: int | None = None
@@ -118,16 +100,23 @@ class AdminCreateTaxonomyNodeBody(BaseModel):
 async def admin_create_taxonomy_node(
     request: Request,
     body: AdminCreateTaxonomyNodeBody,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "name 不能为空"})
 
     # 类型校验：对齐枚举，避免写入非法值
-    if body.type not in (TaxonomyType.VENUE.value, TaxonomyType.PRODUCT.value, TaxonomyType.CONTENT.value):
+    if body.type not in (
+        TaxonomyType.VENUE.value,
+        TaxonomyType.PRODUCT.value,
+        TaxonomyType.CONTENT.value,
+        TaxonomyType.PRODUCT_TAG.value,
+        TaxonomyType.SERVICE_TAG.value,
+        TaxonomyType.VENUE_TAG.value,
+    ):
         raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "type 不合法"})
 
     session_factory = get_session_factory()
@@ -158,9 +147,9 @@ async def admin_update_taxonomy_node(
     request: Request,
     id: str,
     body: AdminUpdateTaxonomyNodeBody,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     if body.status is not None and body.status not in (
         CommonEnabledStatus.ENABLED.value,
@@ -189,4 +178,3 @@ async def admin_update_taxonomy_node(
         await session.commit()
 
     return ok(data=_dto(n), request_id=request.state.request_id)
-

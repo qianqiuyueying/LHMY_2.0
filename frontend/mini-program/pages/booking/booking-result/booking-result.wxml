@@ -1,0 +1,31 @@
+<!--pages/booking/booking-result/booking-result.wxml-->
+<view class="container" wx:if="{{!loading && booking}}">
+  <view class="result-card card">
+    <image class="result-icon success" src="/icons/success.png" mode="aspectFit"></image>
+    <text class="result-title">预约成功</text>
+    <text class="result-status {{booking.status === 'CONFIRMED' ? 'confirmed' : 'pending'}}">
+      {{booking.status === 'CONFIRMED' ? '已确认' : '待确认'}}
+    </text>
+  </view>
+
+  <view class="card">
+    <view class="info-row">
+      <text class="label">场所</text>
+      <text class="value">{{booking.venueName}}</text>
+    </view>
+    <view class="info-row">
+      <text class="label">服务</text>
+      <text class="value">{{booking.serviceType}}</text>
+    </view>
+    <view class="info-row">
+      <text class="label">日期</text>
+      <text class="value">{{booking.bookingDate}}</text>
+    </view>
+    <view class="info-row">
+      <text class="label">时段</text>
+      <text class="value">{{booking.timeSlot}}</text>
+    </view>
+  </view>
+
+  <button class="btn btn-primary" bindtap="onBackToList">返回预约列表</button>
+</view>

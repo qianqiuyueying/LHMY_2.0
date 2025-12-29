@@ -25,7 +25,9 @@ class SystemConfig(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="配置ID")
 
-    key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True, comment="配置Key（全局唯一）")
+    key: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True, index=True, comment="配置Key（全局唯一）"
+    )
 
     value_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, comment="配置值（JSON）")
 

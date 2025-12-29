@@ -1,0 +1,32 @@
+<!-- pages/legal/agreement/agreement.wxml -->
+<view class="container">
+  <view class="title">{{ title || '服务协议' }}</view>
+  <view class="meta">code={{ code }} · version={{ version || '0' }}</view>
+
+  <view wx:if="{{loading}}" class="loading">加载中...</view>
+  <view wx:elif="{{error}}" class="error">
+    {{ error }}
+    <view style="margin-top: 12rpx">
+      <button class="btn ghost" bindtap="onRetry">重试</button>
+    </view>
+  </view>
+  <view wx:else class="content">
+    <rich-text nodes="{{ contentHtml }}"></rich-text>
+  </view>
+
+  <view wx:if="{{canAccept}}" class="footer">
+    <button class="btn ghost" bindtap="onDecline" disabled="{{accepting}}">不同意</button>
+    <button class="btn primary" bindtap="onAcceptAndLogin" loading="{{accepting}}" disabled="{{accepting}}">
+      同意并登录
+    </button>
+  </view>
+
+  <view wx:elif="{{canContinueLogin}}" class="footer">
+    <button class="btn ghost" bindtap="onDecline" disabled="{{accepting}}">返回</button>
+    <button class="btn primary" bindtap="onContinueLogin" loading="{{accepting}}" disabled="{{accepting}}">
+      继续登录
+    </button>
+  </view>
+</view>
+
+

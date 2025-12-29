@@ -5,46 +5,13 @@
 - specs/health-services-platform/tasks.md -> 阶段6-35.4
 
 v1 最小断言：
-- entitlementType=VOUCHER：全平台通用，但若配置了 applicableVenues（白名单）则必须命中才可用
 - entitlementType=SERVICE_PACKAGE：必须匹配 applicableRegions（区域限制），且若配置了 applicableVenues 则也必须命中
 """
 
 from __future__ import annotations
 
-from hypothesis import given
-from hypothesis import strategies as st
-
 from app.models.enums import EntitlementType
 from app.services.venue_filtering_rules import VenueLite, VenueRegion, filter_venues_by_entitlement
-
-
-@given(
-    venue_ids=st.lists(st.text(min_size=1, max_size=36), min_size=1, max_size=20, unique=True),
-    whitelist=st.lists(st.integers(min_value=0, max_value=19), max_size=20),
-    random_regions=st.lists(st.text(min_size=1, max_size=32), max_size=5),
-)
-def test_property_14_voucher_only_respects_applicable_venues(
-    venue_ids: list[str],
-    whitelist: list[int],
-    random_regions: list[str],
-):
-    venues = [
-        VenueLite(id=vid, region=VenueRegion(country_code=None, province_code=None, city_code=None)) for vid in venue_ids
-    ]
-    picked = {venue_ids[i] for i in whitelist if i < len(venue_ids)}
-    applicable_venues = list(picked)
-
-    filtered = filter_venues_by_entitlement(
-        venues=venues,
-        entitlement_type=EntitlementType.VOUCHER.value,
-        applicable_regions=random_regions,  # 对 voucher 不应产生限制
-        applicable_venues=applicable_venues,
-    )
-
-    if applicable_venues:
-        assert {v.id for v in filtered} == picked
-    else:
-        assert {v.id for v in filtered} == set(venue_ids)
 
 
 def test_property_14_service_package_requires_region_match_and_whitelist():
@@ -91,4 +58,3 @@ def test_property_14_service_package_requires_region_match_and_whitelist():
         applicable_venues=None,
     )
     assert filtered3 == []
-

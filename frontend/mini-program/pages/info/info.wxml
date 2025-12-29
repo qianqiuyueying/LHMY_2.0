@@ -1,0 +1,95 @@
+<!--pages/info/info.wxml-->
+<view class="container">
+  <view class="state-wrap" wx:if="{{loading}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载中</view>
+      <view class="state-desc">正在加载页面内容…</view>
+    </view>
+  </view>
+
+  <view class="state-wrap" wx:elif="{{errorMessage}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载失败</view>
+      <view class="state-desc">{{errorMessage}}</view>
+      <view class="state-actions">
+        <button class="btn btn-primary" bindtap="onRetryTap">重试</button>
+        <button class="btn btn-ghost" bindtap="onBackTap">返回</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="state-wrap" wx:elif="{{!pageConfig}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">页面不可用</view>
+      <view class="state-desc">该页面暂时无法打开</view>
+      <view class="state-actions">
+        <button class="btn btn-ghost" bindtap="onBackTap">返回</button>
+      </view>
+    </view>
+  </view>
+
+  <view wx:else>
+    <view
+      class="block"
+      wx:for="{{pageConfig.blocks || []}}"
+      wx:key="index"
+    >
+      <!-- Banner/图片轮播 -->
+    <swiper wx:if="{{item.type === 'banner'}}" class="banner-swiper" indicator-dots="true" autoplay="true">
+      <swiper-item wx:for="{{item.items || []}}" wx:for-item="banner" wx:key="index">
+        <view
+          class="media-placeholder media-placeholder--banner"
+          data-jump-type="{{banner.jumpType}}"
+          data-target-id="{{banner.targetId}}"
+          data-title="{{banner.title}}"
+          bindtap="onJumpTap"
+        >
+          <text class="media-placeholder-text">{{banner.title || '内容'}}</text>
+        </view>
+      </swiper-item>
+    </swiper>
+
+      <!-- 富文本 -->
+      <view wx:if="{{item.type === 'richText' || item.type === 'markdown'}}" class="rich-text">
+        <rich-text nodes="{{item.contentHtml}}"></rich-text>
+      </view>
+
+      <!-- 链接列表 -->
+      <view wx:if="{{item.type === 'links'}}" class="links-list">
+        <view
+          class="link-item"
+          wx:for="{{item.items || []}}"
+          wx:for-item="link"
+          wx:key="index"
+          data-jump-type="{{link.jumpType}}"
+          data-target-id="{{link.targetId}}"
+          data-title="{{link.title}}"
+          bindtap="onJumpTap"
+        >
+          <text>{{link.title}}</text>
+          <text class="arrow">></text>
+        </view>
+      </view>
+
+      <!-- 卡片列表 -->
+      <view wx:if="{{item.type === 'cards'}}" class="cards-list">
+      <view
+          class="card-item card"
+          wx:for="{{item.items || []}}"
+          wx:for-item="card"
+          wx:key="index"
+          data-jump-type="{{card.jumpType}}"
+          data-target-id="{{card.targetId}}"
+          data-title="{{card.title}}"
+          bindtap="onJumpTap"
+        >
+        <view class="media-placeholder media-placeholder--square"></view>
+          <text class="card-title">{{card.title}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

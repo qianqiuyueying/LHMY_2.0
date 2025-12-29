@@ -8,19 +8,21 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 
 from app.models.enums import ProductFulfillmentType, ProductStatus
 from app.models.product import Product
 from app.models.provider import Provider
 from app.utils.db import get_session_factory
-from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
-from app.utils.redis_client import get_redis
 from app.utils.response import ok
+from app.api.v1.deps import require_admin
+from app.services.rbac import ActorContext
+from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
 router = APIRouter(tags=["products"])
 
@@ -35,10 +37,14 @@ class ProductPrice(BaseModel):
 class ProductListItem(BaseModel):
     id: str
     title: str
-    fulfillmentType: Literal["VIRTUAL_VOUCHER", "SERVICE"]
+    fulfillmentType: Literal["SERVICE", "PHYSICAL_GOODS"]
     coverImageUrl: str | None = None
     price: ProductPrice
     tags: list[str] | None = None
+    stock: int | None = None
+    reservedStock: int | None = None
+    weight: float | None = None
+    shippingFee: float | None = None
 
 
 class ProductListResp(BaseModel):
@@ -54,7 +60,7 @@ async def list_products(
     keyword: str | None = None,
     categoryId: str | None = None,
     providerId: str | None = None,
-    fulfillmentType: Literal["VIRTUAL_VOUCHER", "SERVICE"] | None = None,
+    fulfillmentType: Literal["SERVICE", "PHYSICAL_GOODS"] | None = None,
     page: int = 1,
     pageSize: int = 20,
 ):
@@ -64,9 +70,7 @@ async def list_products(
 
     stmt = select(Product).where(
         Product.status == ProductStatus.ON_SALE.value,
-        Product.fulfillment_type.in_(
-            [ProductFulfillmentType.VIRTUAL_VOUCHER.value, ProductFulfillmentType.SERVICE.value]
-        ),
+        Product.fulfillment_type.in_([ProductFulfillmentType.SERVICE.value, ProductFulfillmentType.PHYSICAL_GOODS.value]),
     )
 
     if keyword:
@@ -91,9 +95,7 @@ async def list_products(
     session_factory = get_session_factory()
     async with session_factory() as session:
         total = int((await session.execute(count_stmt)).scalar() or 0)
-        rows = (
-            await session.scalars(stmt.offset((page - 1) * page_size).limit(page_size))
-        ).all()
+        rows = (await session.scalars(stmt.offset((page - 1) * page_size).limit(page_size))).all()
 
     items = [
         ProductListItem(
@@ -103,6 +105,10 @@ async def list_products(
             coverImageUrl=p.cover_image_url,
             price=ProductPrice(**(p.price or {})),
             tags=p.tags,
+            stock=int(p.stock or 0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
+            reservedStock=int(p.reserved_stock or 0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
+            weight=(float(p.weight) if p.weight is not None else None) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
+            shippingFee=float(p.shipping_fee or 0.0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
         )
         for p in rows
     ]
@@ -121,12 +127,16 @@ class ProductDetailProvider(BaseModel):
 class ProductDetailResp(BaseModel):
     id: str
     title: str
-    fulfillmentType: Literal["VIRTUAL_VOUCHER", "SERVICE"]
+    fulfillmentType: Literal["SERVICE", "PHYSICAL_GOODS"]
     imageUrls: list[str]
     description: str | None = None
     price: ProductPrice
     tags: list[str] | None = None
     provider: ProductDetailProvider
+    stock: int | None = None
+    reservedStock: int | None = None
+    weight: float | None = None
+    shippingFee: float | None = None
 
 
 @router.get("/products/{id}")
@@ -135,9 +145,7 @@ async def get_product_detail(request: Request, id: str):
     async with session_factory() as session:
         p = (
             await session.scalars(
-                select(Product)
-                .where(Product.id == id, Product.status == ProductStatus.ON_SALE.value)
-                .limit(1)
+                select(Product).where(Product.id == id, Product.status == ProductStatus.ON_SALE.value).limit(1)
             )
         ).first()
         pr = None
@@ -165,6 +173,10 @@ async def get_product_detail(request: Request, id: str):
             price=ProductPrice(**(p.price or {})),
             tags=p.tags,
             provider=provider,
+            stock=int(p.stock or 0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
+            reservedStock=int(p.reserved_stock or 0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
+            weight=(float(p.weight) if p.weight is not None else None) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
+            shippingFee=float(p.shipping_fee or 0.0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
         ).model_dump(),
         request_id=request.state.request_id,
     )
@@ -173,24 +185,6 @@ async def get_product_detail(request: Request, id: str):
 # -----------------------------
 # Admin：商品审核与监管（阶段10）
 # -----------------------------
-
-
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
-
-
-async def _require_admin(authorization: str | None) -> dict:
-    token = _extract_bearer_token(authorization)
-    payload = decode_and_validate_admin_token(token=token)
-    redis = get_redis()
-    if await redis.exists(token_blacklist_key(jti=str(payload["jti"]))):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return payload
 
 
 def _admin_product_list_item(p: Product, provider_name: str | None) -> dict:
@@ -208,25 +202,42 @@ def _admin_product_list_item(p: Product, provider_name: str | None) -> dict:
             "member": (float(price["member"]) if price.get("member") is not None else None),
             "activity": (float(price["activity"]) if price.get("activity") is not None else None),
         },
+        "stock": int(p.stock or 0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
+        "reservedStock": int(p.reserved_stock or 0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
+        "weight": float(p.weight) if (p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value and p.weight is not None) else None,
+        "shippingFee": float(p.shipping_fee or 0.0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
         "status": p.status,
+        "rejectReason": getattr(p, "reject_reason", None),
+        "rejectedAt": (getattr(p, "rejected_at", None).astimezone().isoformat() if getattr(p, "rejected_at", None) else None),
         "createdAt": p.created_at.astimezone().isoformat(),
         "updatedAt": p.updated_at.astimezone().isoformat(),
     }
 
 
+class AdminRejectProductBody(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def _trim(self):
+        self.reason = str(self.reason or "").strip()
+        if not self.reason:
+            raise ValueError("reason 不能为空")
+        return self
+
+
 @router.get("/admin/products")
 async def admin_list_products(
     request: Request,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
     keyword: str | None = None,
     providerId: str | None = None,
     categoryId: str | None = None,
     status: Literal["PENDING_REVIEW", "ON_SALE", "OFF_SHELF", "REJECTED"] | None = None,
-    fulfillmentType: Literal["VIRTUAL_VOUCHER", "SERVICE"] | None = None,
+    fulfillmentType: Literal["SERVICE", "PHYSICAL_GOODS"] | None = None,
     page: int = 1,
     pageSize: int = 20,
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     page = max(1, int(page))
     page_size = max(1, min(100, int(pageSize)))
@@ -254,24 +265,23 @@ async def admin_list_products(
 
         provider_ids = list({p.provider_id for p in products if p.provider_id})
         providers = (
-            (await session.scalars(select(Provider).where(Provider.id.in_(provider_ids))))
-            .all()
-            if provider_ids
-            else []
+            (await session.scalars(select(Provider).where(Provider.id.in_(provider_ids)))).all() if provider_ids else []
         )
         provider_name_map = {x.id: x.name for x in providers}
 
     items = [_admin_product_list_item(p, provider_name_map.get(p.provider_id)) for p in products]
-    return ok(data={"items": items, "page": page, "pageSize": page_size, "total": total}, request_id=request.state.request_id)
+    return ok(
+        data={"items": items, "page": page, "pageSize": page_size, "total": total}, request_id=request.state.request_id
+    )
 
 
 @router.put("/admin/products/{id}/approve")
 async def admin_approve_product(
     request: Request,
     id: str,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -284,6 +294,8 @@ async def admin_approve_product(
             raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "商品状态不允许审核通过"})
 
         p.status = ProductStatus.ON_SALE.value
+        p.reject_reason = None
+        p.rejected_at = None
         await session.commit()
         await session.refresh(p)
 
@@ -296,9 +308,10 @@ async def admin_approve_product(
 async def admin_reject_product(
     request: Request,
     id: str,
-    authorization: str | None = Header(default=None),
+    body: AdminRejectProductBody,
+    _admin: ActorContext = Depends(require_admin),
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -311,6 +324,8 @@ async def admin_reject_product(
             raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "商品状态不允许驳回"})
 
         p.status = ProductStatus.REJECTED.value
+        p.reject_reason = str(body.reason or "").strip()
+        p.rejected_at = datetime.utcnow()
         await session.commit()
         await session.refresh(p)
 
@@ -323,9 +338,9 @@ async def admin_reject_product(
 async def admin_off_shelf_product(
     request: Request,
     id: str,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -344,4 +359,3 @@ async def admin_off_shelf_product(
         pr = (await session.scalars(select(Provider).where(Provider.id == p.provider_id).limit(1))).first()
 
     return ok(data=_admin_product_list_item(p, pr.name if pr else None), request_id=request.state.request_id)
-

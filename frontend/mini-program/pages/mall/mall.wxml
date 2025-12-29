@@ -1,0 +1,102 @@
+<!--pages/mall/mall.wxml-->
+<view class="container">
+  <view class="state-wrap" wx:if="{{pageState === 'loading'}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载中</view>
+      <view class="state-desc">正在加载商品…</view>
+    </view>
+  </view>
+
+  <view class="state-wrap" wx:elif="{{pageState === 'error'}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">加载失败</view>
+      <view class="state-desc">{{errorMessage || '加载失败，请稍后重试'}}</view>
+      <view class="state-actions">
+        <button class="btn btn-primary" bindtap="onRetryTap">重试</button>
+      </view>
+    </view>
+  </view>
+
+  <view wx:else>
+  <!-- 搜索栏 -->
+  <view class="search-bar">
+    <input 
+      class="search-input" 
+      placeholder="搜索商品" 
+      value="{{keyword}}"
+      bindinput="onSearchInput"
+      bindconfirm="onSearchConfirm"
+    />
+  </view>
+
+  <!-- 分类筛选 -->
+  <scroll-view class="category-scroll" scroll-x="true">
+    <view class="category-list">
+      <view 
+        class="category-item {{categoryId === null ? 'active' : ''}}"
+        bindtap="onCategoryTap"
+        data-id="{{null}}"
+      >
+        全部
+      </view>
+      <view 
+        class="category-item {{categoryId === item.id ? 'active' : ''}}"
+        wx:for="{{categories}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="onCategoryTap"
+      >
+        {{item.name}}
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- 商品列表 -->
+  <view class="products-grid">
+    <view 
+      class="product-item"
+      wx:for="{{products}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onProductTap"
+    >
+      <image
+        wx:if="{{item.coverImageUrlAbs}}"
+        class="product-cover"
+        src="{{item.coverImageUrlAbs}}"
+        mode="aspectFill"
+      ></image>
+      <view wx:else class="media-placeholder media-placeholder--square"></view>
+      <view class="product-info">
+        <text class="product-name">{{item.title}}</text>
+        <view class="product-price-row">
+          <text class="price-symbol">¥</text>
+          <text class="price-value">{{item.displayPrice || 0}}</text>
+        </view>
+        <view class="product-tags">
+          <text class="tag-pill" wx:if="{{item.hasActivityPrice}}">活动价</text>
+          <text class="tag-pill" wx:if="{{item.hasMemberPrice}}">会员价</text>
+          <text class="tag-pill" wx:if="{{item.hasEmployeePrice}}">员工价</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 加载更多 -->
+  <view class="loading-more" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+  <view class="state-wrap" wx:if="{{!loading && products.length === 0}}">
+    <view class="state-card">
+      <view class="state-graphic"></view>
+      <view class="state-title">暂无商品</view>
+      <view class="state-desc">换个关键词或分类试试</view>
+    </view>
+  </view>
+  <view class="no-more" wx:if="{{!hasMore && !loading && products.length > 0}}">
+    <text>没有更多了</text>
+  </view>
+  </view>
+</view>

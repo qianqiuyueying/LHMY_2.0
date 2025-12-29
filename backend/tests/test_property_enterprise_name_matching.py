@@ -47,4 +47,3 @@ def test_property_9_exact_match_ranks_first(name: str):
     assert suggestions, "至少应返回一条匹配建议"
     # 规范化等价的精确匹配应排在最前（两条都算精确，按 name 二次排序）
     assert normalize_enterprise_name(suggestions[0].name) == normalized
-

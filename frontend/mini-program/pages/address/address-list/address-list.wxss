@@ -1,0 +1,82 @@
+/* pages/address/address-list/address-list.wxss */
+.container {
+  padding: 20rpx;
+}
+
+.top-actions {
+  margin-bottom: 16rpx;
+}
+
+.state {
+  padding: 40rpx 20rpx;
+  color: #999;
+  text-align: center;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.addr {
+  padding: 18rpx;
+}
+
+.addr-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #222;
+}
+
+.phone {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.badge {
+  font-size: 22rpx;
+  color: var(--c-primary);
+  background: var(--c-primary-weak);
+  padding: 4rpx 10rpx;
+  border-radius: 999rpx;
+}
+
+.addr-line {
+  margin-top: 10rpx;
+}
+
+.line {
+  font-size: 26rpx;
+  color: #333;
+  line-height: 1.5;
+}
+
+.addr-actions {
+  margin-top: 14rpx;
+  display: flex;
+  gap: 14rpx;
+  justify-content: flex-end;
+}
+
+.mini-btn {
+  font-size: 24rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 10rpx;
+  border: 1rpx solid #e8e8e8;
+  background: #fff;
+  color: #333;
+}
+
+.mini-btn.danger {
+  color: #d33;
+  border-color: rgba(211, 51, 51, 0.35);
+}
+
+

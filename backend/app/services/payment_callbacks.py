@@ -19,9 +19,12 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.models.enums import OrderType, PaymentStatus
+from app.models.enums import OrderFulfillmentStatus, OrderType, PaymentStatus, ProductFulfillmentType
 from app.models.order import Order
+from app.models.order_item import OrderItem
 from app.models.payment import Payment
+from app.models.product import Product
+from app.services.order_state_machine import assert_order_status_transition
 from app.services.entitlement_generation import generate_entitlements_after_payment_succeeded
 from app.services.fulfillment_routing import FulfillmentFlow, resolve_fulfillment_flow
 from app.utils.settings import settings
@@ -40,7 +43,9 @@ async def mark_payment_succeeded(
     if o is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在"})
 
-    p = (await session.scalars(select(Payment).where(Payment.id == payment_id, Payment.order_id == order_id).limit(1))).first()
+    p = (
+        await session.scalars(select(Payment).where(Payment.id == payment_id, Payment.order_id == order_id).limit(1))
+    ).first()
     if p is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "支付记录不存在"})
 
@@ -48,8 +53,7 @@ async def mark_payment_succeeded(
         # 幂等：重复回调不应报错
         return resolve_fulfillment_flow(order_type=OrderType(o.order_type))
 
-    if o.payment_status != PaymentStatus.PENDING.value:
-        raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "订单状态不允许置为支付成功"})
+    assert_order_status_transition(current=o.payment_status, target=PaymentStatus.PAID.value)
 
     now = datetime.now(tz=UTC)
     o.payment_status = PaymentStatus.PAID.value
@@ -59,7 +63,7 @@ async def mark_payment_succeeded(
     if provider_payload is not None:
         p.provider_payload = provider_payload
 
-    # 阶段5：支付成功后自动生成权益（虚拟券/服务包）
+    # 阶段5：支付成功后自动生成权益（服务包）
     # - 幂等：生成逻辑内部对同一 orderId 做“已生成”检查
     await generate_entitlements_after_payment_succeeded(
         session=session,
@@ -67,7 +71,28 @@ async def mark_payment_succeeded(
         qr_sign_secret=settings.entitlement_qr_sign_secret,
     )
 
+    # v2：物流商品库存确认扣减（占用 -> 扣减），并进入待发货
+    if o.order_type == OrderType.PRODUCT.value and o.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value:
+        items: list[OrderItem] = (await session.scalars(select(OrderItem).where(OrderItem.order_id == o.id))).all()
+        product_ids = [it.item_id for it in items if it.item_type == "PRODUCT"]
+        if product_ids:
+            products: list[Product] = (await session.scalars(select(Product).where(Product.id.in_(product_ids)))).all()
+            prod_map = {x.id: x for x in products}
+            for it in items:
+                if it.item_type != "PRODUCT":
+                    continue
+                p2 = prod_map.get(it.item_id)
+                if p2 is None:
+                    continue
+                qty = int(it.quantity or 0)
+                if qty <= 0:
+                    continue
+                p2.stock = max(0, int(p2.stock or 0) - qty)
+                p2.reserved_stock = max(0, int(p2.reserved_stock or 0) - qty)
+
+        o.fulfillment_status = OrderFulfillmentStatus.NOT_SHIPPED.value
+        o.reservation_expires_at = None
+
     await session.commit()
 
     return resolve_fulfillment_flow(order_type=OrderType(o.order_type))
-

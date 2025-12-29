@@ -20,17 +20,16 @@ from app.utils.redis_client import get_redis
 
 class RbacContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
-        request.state.actor = None  # type: ignore[attr-defined]
+        request.state.actor = None
 
         auth = request.headers.get("Authorization")
         if auth and auth.lower().startswith("bearer "):
             token = auth.split(" ", 1)[1].strip()
             try:
                 actor: ActorContext = await parse_actor_from_bearer_token(token=token, redis=get_redis())
-                request.state.actor = actor  # type: ignore[attr-defined]
+                request.state.actor = actor
             except Exception:
                 # 无效 token 不在此处拦截，由具体端点决定是否要求登录
-                request.state.actor = None  # type: ignore[attr-defined]
+                request.state.actor = None
 
         return await call_next(request)
-

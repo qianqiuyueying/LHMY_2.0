@@ -1,0 +1,88 @@
+/* pages/profile/profile-edit/profile-edit.wxss */
+
+.container {
+  background: #f5f5f5;
+  min-height: 100vh;
+  padding: 20rpx;
+}
+
+.card {
+  background: #fff;
+  border-radius: var(--r-card);
+  padding: 10rpx 0;
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 26rpx 24rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: 28rpx;
+  color: #111827;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.value {
+  font-size: 26rpx;
+  color: #6b7280;
+}
+
+.avatar-btn {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  line-height: 0;
+}
+
+.avatar {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+}
+
+.input {
+  text-align: right;
+  font-size: 28rpx;
+  color: #111827;
+  flex: 1;
+  margin-left: 20rpx;
+}
+
+.mini-action {
+  font-size: 24rpx;
+  padding: 10rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--c-primary);
+  color: #fff;
+  border: none;
+  min-height: 56rpx;
+  line-height: 56rpx;
+}
+
+.save-btn {
+  margin-top: 24rpx;
+  background: var(--c-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-btn);
+  padding: 20rpx 40rpx;
+  font-size: 28rpx;
+  min-height: 88rpx;
+}
+
+

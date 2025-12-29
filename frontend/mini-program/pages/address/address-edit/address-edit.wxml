@@ -1,0 +1,42 @@
+<!-- pages/address/address-edit/address-edit.wxml -->
+<view class="container">
+  <view class="card form">
+    <view class="field">
+      <text class="label">收件人</text>
+      <input class="input" placeholder="姓名" value="{{form.receiverName}}" bindinput="onInput" data-key="receiverName" />
+    </view>
+    <view class="field">
+      <text class="label">手机号</text>
+      <input class="input" placeholder="手机号" value="{{form.receiverPhone}}" bindinput="onInput" data-key="receiverPhone" />
+    </view>
+
+    <view class="field" wx:if="{{provinceOptions.length > 0}}">
+      <text class="label">省份</text>
+      <picker mode="selector" range="{{provinceOptions}}" range-key="name" bindchange="onProvinceChange">
+        <view class="picker">{{selectedProvinceName || '请选择省份'}}</view>
+      </picker>
+    </view>
+    <view class="field" wx:if="{{cityOptions.length > 0}}">
+      <text class="label">城市</text>
+      <picker mode="selector" range="{{cityOptions}}" range-key="name" bindchange="onCityChange">
+        <view class="picker">{{selectedCityName || '请选择城市'}}</view>
+      </picker>
+    </view>
+
+    <view class="field">
+      <text class="label">详细地址</text>
+      <input class="input" placeholder="街道/门牌号" value="{{form.addressLine}}" bindinput="onInput" data-key="addressLine" />
+    </view>
+
+    <view class="field row">
+      <text class="label">设为默认</text>
+      <switch checked="{{form.isDefault}}" bindchange="onDefaultToggle" />
+    </view>
+  </view>
+
+  <view class="actions">
+    <button class="btn btn-primary" bindtap="onSave" disabled="{{saving}}">{{saving ? '保存中…' : '保存'}}</button>
+  </view>
+</view>
+
+

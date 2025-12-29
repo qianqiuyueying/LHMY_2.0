@@ -33,4 +33,6 @@ class EntitlementTransfer(Base):
     from_owner_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="转出方 ownerId")
     to_owner_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="转入方 ownerId")
 
-    transferred_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="转赠时间")
+    transferred_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, comment="转赠时间"
+    )

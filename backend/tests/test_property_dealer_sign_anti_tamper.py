@@ -20,7 +20,9 @@ from app.services.dealer_signing import sign_params, verify_params
 
 def _safe_text(min_size: int = 1, max_size: int = 36):
     # 避免 & = ? 等可能影响 canonical 的字符
-    alphabet = st.characters(blacklist_characters=["&", "=", "?", "#", " ", "\n", "\r", "\t"], min_codepoint=33, max_codepoint=126)
+    alphabet = st.characters(
+        blacklist_characters=["&", "=", "?", "#", " ", "\n", "\r", "\t"], min_codepoint=33, max_codepoint=126
+    )
     return st.text(alphabet=alphabet, min_size=min_size, max_size=max_size)
 
 
@@ -38,15 +40,21 @@ def test_property_5_verify_ok_and_tamper_detected(secret: str, dealer_id: str, n
 
     # 篡改 dealerId
     bad_dealer_id = dealer_id + "X"
-    assert verify_params(secret=secret, dealer_id=bad_dealer_id, ts=ts, nonce=nonce, sign=sign, now_ts=now_ts).ok is False
+    assert (
+        verify_params(secret=secret, dealer_id=bad_dealer_id, ts=ts, nonce=nonce, sign=sign, now_ts=now_ts).ok is False
+    )
 
     # 篡改 ts
     bad_ts = ts + 1
-    assert verify_params(secret=secret, dealer_id=dealer_id, ts=bad_ts, nonce=nonce, sign=sign, now_ts=now_ts).ok is False
+    assert (
+        verify_params(secret=secret, dealer_id=dealer_id, ts=bad_ts, nonce=nonce, sign=sign, now_ts=now_ts).ok is False
+    )
 
     # 篡改 nonce
     bad_nonce = nonce + "Y"
-    assert verify_params(secret=secret, dealer_id=dealer_id, ts=ts, nonce=bad_nonce, sign=sign, now_ts=now_ts).ok is False
+    assert (
+        verify_params(secret=secret, dealer_id=dealer_id, ts=ts, nonce=bad_nonce, sign=sign, now_ts=now_ts).ok is False
+    )
 
 
 @given(

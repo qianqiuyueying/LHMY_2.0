@@ -9,37 +9,19 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.models.enums import CommonEnabledStatus
 from app.models.product_category import ProductCategory
 from app.utils.db import get_session_factory
-from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
-from app.utils.redis_client import get_redis
 from app.utils.response import ok
+from app.api.v1.deps import require_admin
+from app.services.rbac import ActorContext
+from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
 router = APIRouter(tags=["product-categories"])
-
-
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
-
-
-async def _require_admin(authorization: str | None) -> dict:
-    token = _extract_bearer_token(authorization)
-    payload = decode_and_validate_admin_token(token=token)
-    redis = get_redis()
-    if await redis.exists(token_blacklist_key(jti=str(payload["jti"]))):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return payload
-
 
 class ProductCategoryDTO(BaseModel):
     id: str
@@ -79,12 +61,16 @@ async def list_product_categories(request: Request):
 
 
 @router.get("/admin/product-categories")
-async def admin_list_product_categories(request: Request, authorization: str | None = Header(default=None)):
-    await _require_admin(authorization)
+async def admin_list_product_categories(request: Request, _admin: ActorContext = Depends(require_admin)):
+    _ = _admin
 
     session_factory = get_session_factory()
     async with session_factory() as session:
-        items = (await session.scalars(select(ProductCategory).order_by(ProductCategory.sort.asc(), ProductCategory.created_at.asc()))).all()
+        items = (
+            await session.scalars(
+                select(ProductCategory).order_by(ProductCategory.sort.asc(), ProductCategory.created_at.asc())
+            )
+        ).all()
 
     return ok(data={"items": [_dto(x) for x in items]}, request_id=request.state.request_id)
 
@@ -99,9 +85,9 @@ class AdminCreateProductCategoryBody(BaseModel):
 async def admin_create_product_category(
     request: Request,
     body: AdminCreateProductCategoryBody,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     name = body.name.strip()
     if not name:
@@ -134,9 +120,9 @@ async def admin_update_product_category(
     request: Request,
     id: str,
     body: AdminUpdateProductCategoryBody,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     if body.status is not None and body.status not in (
         CommonEnabledStatus.ENABLED.value,
@@ -165,4 +151,3 @@ async def admin_update_product_category(
         await session.commit()
 
     return ok(data=_dto(c), request_id=request.state.request_id)
-

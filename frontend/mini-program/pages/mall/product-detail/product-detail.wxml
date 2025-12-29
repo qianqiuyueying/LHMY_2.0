@@ -1,0 +1,60 @@
+<!--pages/mall/product-detail/product-detail.wxml-->
+<view class="container" wx:if="{{!loading}}">
+  <!-- 商品头图 -->
+  <swiper class="product-hero" indicator-dots="true" autoplay="false" wx:if="{{galleryUrlsAbs.length > 0}}">
+    <swiper-item wx:for="{{galleryUrlsAbs}}" wx:key="*this">
+      <image class="hero-image" src="{{item}}" mode="aspectFill" data-url="{{item}}" bindtap="onPreviewImage"></image>
+    </swiper-item>
+  </swiper>
+  <image wx:elif="{{heroUrlAbs}}" class="hero-image hero-image--single" src="{{heroUrlAbs}}" mode="aspectFill" data-url="{{heroUrlAbs}}" bindtap="onPreviewImage"></image>
+  <view wx:else class="media-placeholder media-placeholder--banner product-hero">
+    <text class="media-placeholder-text">{{product.title}}</text>
+  </view>
+
+  <!-- 商品信息 -->
+  <view class="product-info card">
+    <text class="product-title">{{product.title}}</text>
+    <view class="price-section">
+      <view class="price-row">
+        <text class="price-symbol">¥</text>
+        <text class="price-value">{{displayPrice}}</text>
+        <text class="price-type" wx:if="{{priceType !== 'original'}}">
+          {{priceType === 'activity' ? '活动价' : priceType === 'member' ? '会员价' : '员工价'}}
+        </text>
+      </view>
+      <text class="original-price" wx:if="{{priceType !== 'original'}}">¥{{originalPrice}}</text>
+    </view>
+    <view class="product-tags">
+      <text class="tag" wx:if="{{hasMemberPrice}}">会员价可用</text>
+      <text class="tag" wx:if="{{hasEmployeePrice}}">员工价可用</text>
+    </view>
+  </view>
+
+  <!-- 商品详情 -->
+  <view class="product-detail card">
+    <view class="detail-title">商品详情</view>
+    <text class="detail-content">{{product.description || '暂无详情'}}</text>
+  </view>
+
+  <!-- 售后说明 -->
+  <view class="after-sale card">
+    <view class="detail-title">售后说明</view>
+    <text class="detail-content">支持7天无理由退货</text>
+  </view>
+</view>
+
+<!-- 底部操作栏 -->
+<view class="bottom-cta-bar is-space-between">
+  <view class="quantity-selector">
+    <text class="quantity-label">数量：</text>
+    <view class="quantity-control">
+      <text class="quantity-btn" bindtap="onQuantityDecrease">-</text>
+      <text class="quantity-value">{{quantity}}</text>
+      <text class="quantity-btn" bindtap="onQuantityIncrease">+</text>
+    </view>
+  </view>
+  <view class="action-buttons">
+    <button class="btn btn-ghost" bindtap="onAddToCart">加入购物车</button>
+    <button class="btn btn-primary" bindtap="onBuyNow">立即购买</button>
+  </view>
+</view>

@@ -1,0 +1,60 @@
+.container {
+  padding: 24rpx;
+}
+
+.title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #111827;
+}
+
+.meta {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #6b7280;
+}
+
+.loading,
+.error {
+  margin-top: 24rpx;
+  color: #6b7280;
+}
+
+.content {
+  margin-top: 24rpx;
+  padding: 20rpx;
+  border-radius: 16rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 24rpx rgba(2, 6, 23, 0.06);
+}
+
+.footer {
+  position: sticky;
+  bottom: 0;
+  margin-top: 20rpx;
+  padding: 16rpx 0 0;
+  display: flex;
+  gap: 12rpx;
+  background: transparent;
+}
+
+.btn {
+  flex: 1;
+  height: 84rpx;
+  line-height: 84rpx;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+}
+
+.btn.primary {
+  background: #10b981;
+  color: #fff;
+}
+
+.btn.ghost {
+  background: #fff;
+  border: 1px solid rgba(2, 6, 23, 0.12);
+  color: #111827;
+}
+
+

@@ -21,7 +21,6 @@ class FulfillmentFlow(StrEnum):
     """订单支付成功后的履约流程类型（用于路由/后续扩展）。"""
 
     SERVICE = "SERVICE"
-    VOUCHER = "VOUCHER"
     SERVICE_PACKAGE = "SERVICE_PACKAGE"
 
 
@@ -30,10 +29,7 @@ def resolve_fulfillment_flow(*, order_type: OrderType) -> FulfillmentFlow:
 
     if order_type == OrderType.PRODUCT:
         return FulfillmentFlow.SERVICE
-    if order_type == OrderType.VIRTUAL_VOUCHER:
-        return FulfillmentFlow.VOUCHER
     if order_type == OrderType.SERVICE_PACKAGE:
         return FulfillmentFlow.SERVICE_PACKAGE
     # StrEnum 理论上不会走到这里；保守兜底
     raise ValueError(f"unsupported order_type: {order_type}")
-

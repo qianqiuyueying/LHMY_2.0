@@ -14,7 +14,7 @@ from sqlalchemy.dialects.mysql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-from app.models.enums import AfterSaleDecision, AfterSaleStatus, AfterSaleType
+from app.models.enums import AfterSaleStatus, AfterSaleType
 
 
 class AfterSaleCase(Base):

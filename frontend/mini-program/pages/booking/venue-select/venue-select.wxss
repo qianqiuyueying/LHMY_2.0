@@ -1,0 +1,59 @@
+/* pages/booking/venue-select/venue-select.wxss */
+
+.container {
+  padding: 20rpx;
+}
+
+.venue-card {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20rpx;
+  position: relative;
+}
+
+.venue-card.selected {
+  border: 2rpx solid #3cc51f;
+}
+
+.venue-image {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 8rpx;
+  margin-right: 20rpx;
+}
+
+.venue-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.venue-name {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+.venue-address,
+.venue-region {
+  font-size: 24rpx;
+  color: #666;
+}
+
+.select-icon {
+  position: absolute;
+  top: 20rpx;
+  right: 20rpx;
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  font-size: 28rpx;
+  color: #999;
+}

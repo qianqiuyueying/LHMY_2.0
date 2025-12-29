@@ -1,0 +1,115 @@
+/* pages/order/order-detail/order-detail.wxss */
+
+.container {
+  padding: 20rpx;
+  padding-bottom: 120rpx;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: 28rpx;
+  color: #666;
+}
+
+.value {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.value.amount {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: var(--c-accent);
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-bottom: 24rpx;
+}
+
+.order-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.order-item:last-child {
+  border-bottom: none;
+}
+
+.item-name {
+  flex: 1;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.item-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-width: 0;
+}
+
+.btn-mini {
+  padding: 10rpx 14rpx;
+  min-height: 56rpx;
+  font-size: 24rpx;
+  flex: 0 0 auto;
+}
+
+.item-info {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.item-quantity {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.item-price {
+  font-size: 28rpx;
+  color: var(--c-accent);
+  font-weight: bold;
+}
+
+.addr-row {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.addr-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #222;
+}
+
+.addr-phone {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.addr-line {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  color: #333;
+  line-height: 1.5;
+}
+
+/* 底部操作栏使用全局 bottom-cta-bar + btn */

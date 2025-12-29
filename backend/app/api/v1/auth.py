@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import aliased
@@ -26,11 +26,16 @@ from app.services.enterprise_matching import EnterpriseCandidate, normalize_ente
 from app.services.sms_code_service import SmsCodeService
 from app.services.user_identity_service import compute_identities_and_member_valid_until
 from app.services.enterprise_binding_rules import can_submit_new_binding
+from app.api.v1.deps import require_admin, require_admin_phone_bound
+from app.services.rbac import ActorContext
 from app.utils.db import get_session_factory
 from app.utils.jwt_admin_token import decode_and_validate_admin_token, token_blacklist_key
-from app.utils.jwt_token import create_user_token, decode_and_validate_user_token
+from app.utils.jwt_token import create_user_token, decode_and_validate_user_token, token_blacklist_key as user_token_blacklist_key
 from app.utils.redis_client import get_redis
 from app.utils.response import ok
+from app.models.audit_log import AuditLog
+from app.models.enums import AuditAction, AuditActorType
+from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
 router = APIRouter(tags=["auth"])
 
@@ -159,6 +164,8 @@ def _extract_user_id_from_request(request: Request) -> str:
 class BindEnterpriseBody(BaseModel):
     enterpriseName: str = Field(..., min_length=1)
     enterpriseId: str | None = None
+    # v1：城市信息由用户在小程序绑定流程中“明确选择”提供；后端不做推断
+    cityCode: str = Field(..., min_length=1)
 
 
 @router.post("/auth/bind-enterprise")
@@ -169,10 +176,16 @@ async def bind_enterprise(request: Request, body: BindEnterpriseBody):
     if not enterprise_name:
         raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "enterpriseName 不能为空"})
 
+    city_code = str(body.cityCode or "").strip()
+    if not city_code:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "cityCode 不能为空"})
+
     session_factory = get_session_factory()
     async with session_factory() as session:
         # 绑定唯一性：存在 APPROVED 则拒绝
-        bindings = (await session.scalars(select(UserEnterpriseBinding).where(UserEnterpriseBinding.user_id == user_id))).all()
+        bindings = (
+            await session.scalars(select(UserEnterpriseBinding).where(UserEnterpriseBinding.user_id == user_id))
+        ).all()
         existing_statuses: list[UserEnterpriseBindingStatus] = []
         for b in bindings:
             try:
@@ -187,9 +200,19 @@ async def bind_enterprise(request: Request, body: BindEnterpriseBody):
         # 选择/创建企业（Property 11：提交即写入）
         enterprise: Enterprise | None = None
         if body.enterpriseId:
-            enterprise = (await session.scalars(select(Enterprise).where(Enterprise.id == body.enterpriseId).limit(1))).first()
+            enterprise = (
+                await session.scalars(select(Enterprise).where(Enterprise.id == body.enterpriseId).limit(1))
+            ).first()
             if enterprise is None:
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "enterpriseId 无效"})
+                raise HTTPException(
+                    status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "enterpriseId 无效"}
+                )
+            # v1：城市信息“只允许首次写入”，避免历史企业城市被随意改写导致口径漂移
+            existing_city = str(enterprise.city_code or "").strip()
+            if existing_city and existing_city != city_code:
+                raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "企业城市信息不一致"})
+            if not existing_city:
+                enterprise.city_code = city_code
         else:
             # 无 enterpriseId：尝试复用“同名规范化后唯一”的企业
             all_enterprises = (await session.scalars(select(Enterprise))).all()
@@ -204,11 +227,17 @@ async def bind_enterprise(request: Request, body: BindEnterpriseBody):
                     name=enterprise_name,
                     country_code=None,
                     province_code=None,
-                    city_code=None,
+                    city_code=city_code,
                     source="USER_FIRST_BINDING",
                     first_seen_at=datetime.utcnow(),
                 )
                 session.add(enterprise)
+            else:
+                existing_city = str(enterprise.city_code or "").strip()
+                if existing_city and existing_city != city_code:
+                    raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "企业城市信息不一致"})
+                if not existing_city:
+                    enterprise.city_code = city_code
 
         # 创建绑定记录（PENDING）
         binding = UserEnterpriseBinding(
@@ -237,13 +266,43 @@ async def bind_enterprise(request: Request, body: BindEnterpriseBody):
 # -----------------------------
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
+@router.post("/auth/refresh")
+async def user_refresh(request: Request, authorization: str | None = Header(default=None)):
+    """刷新 USER token（REQ-P2-002）。
+
+    v1 最小口径：基于现有 access token 续期，并使旧 token 立即失效（blacklist）。
+    """
+
+    token = _extract_bearer_token(authorization)
+    payload = decode_and_validate_user_token(token=token)
+
+    redis = get_redis()
+    if await redis.exists(user_token_blacklist_key(jti=str(payload["jti"]))):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "未登录"})
-    return parts[1].strip()
+
+    exp = int(payload.get("exp", 0))
+    now = int(datetime.now(tz=UTC).timestamp())
+    ttl = max(1, exp - now)
+    await redis.set(user_token_blacklist_key(jti=str(payload["jti"])), "1", ex=ttl)
+
+    new_token = create_user_token(user_id=str(payload["sub"]), channel=str(payload.get("channel") or "H5"))
+    return ok(data={"token": new_token}, request_id=request.state.request_id)
+
+
+@router.post("/auth/logout")
+async def user_logout(request: Request, authorization: str | None = Header(default=None)):
+    """USER 登出（REQ-P0-002）。"""
+
+    token = _extract_bearer_token(authorization)
+    payload = decode_and_validate_user_token(token=token)
+
+    exp = int(payload.get("exp", 0))
+    now = int(datetime.now(tz=UTC).timestamp())
+    ttl = max(1, exp - now)
+
+    redis = get_redis()
+    await redis.set(user_token_blacklist_key(jti=str(payload["jti"])), "1", ex=ttl)
+    return ok(data={"success": True}, request_id=request.state.request_id)
 
 
 async def _require_admin(authorization: str | None) -> dict:
@@ -271,13 +330,15 @@ def _parse_dt(raw: str, *, field_name: str) -> datetime:
             return datetime.fromisoformat(raw + "T00:00:00")
         return datetime.fromisoformat(raw)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}) from exc
+        raise HTTPException(
+            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}
+        ) from exc
 
 
 @router.get("/admin/enterprise-bindings")
 async def admin_list_enterprise_bindings(
     request: Request,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin),
     status: Literal["PENDING", "APPROVED", "REJECTED"] | None = None,
     phone: str | None = None,
     enterpriseName: str | None = None,
@@ -286,7 +347,7 @@ async def admin_list_enterprise_bindings(
     page: int = 1,
     pageSize: int = 20,
 ):
-    await _require_admin(authorization)
+    _ = _admin
 
     page = max(1, int(page))
     page_size = max(1, min(100, int(pageSize)))
@@ -348,10 +409,9 @@ async def admin_list_enterprise_bindings(
 async def admin_approve_enterprise_binding(
     request: Request,
     id: str,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin_phone_bound),
 ):
-    await _require_admin(authorization)
-
+    admin_id = str(_admin.sub)
     session_factory = get_session_factory()
     async with session_factory() as session:
         b = (
@@ -360,8 +420,16 @@ async def admin_approve_enterprise_binding(
         if b is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "绑定关系不存在"})
 
+        # 幂等 no-op：同一目标状态重复提交 -> 200（不刷审计）
+        if b.status == UserEnterpriseBindingStatus.APPROVED.value:
+            return ok(data={"id": b.id, "status": b.status}, request_id=request.state.request_id)
+
+        # 非法迁移：已 REJECTED 仍 approve
         if b.status != UserEnterpriseBindingStatus.PENDING.value:
-            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "绑定状态不允许审核通过"})
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "INVALID_STATE_TRANSITION", "message": "绑定状态不允许审核通过"},
+            )
 
         # 属性10：一旦出现 APPROVED，同一用户新的绑定申请必须被拒绝（防御性校验）
         existing_approved = (
@@ -375,25 +443,52 @@ async def admin_approve_enterprise_binding(
             )
         ).first()
         if existing_approved is not None:
-            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "用户已存在生效的企业绑定"})
+            raise HTTPException(
+                status_code=409, detail={"code": "STATE_CONFLICT", "message": "用户已存在生效的企业绑定"}
+            )
 
         user = (await session.scalars(select(User).where(User.id == b.user_id).limit(1))).first()
         if user is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "用户不存在"})
 
-        enterprise = (await session.scalars(select(Enterprise).where(Enterprise.id == b.enterprise_id).limit(1))).first()
+        enterprise = (
+            await session.scalars(select(Enterprise).where(Enterprise.id == b.enterprise_id).limit(1))
+        ).first()
         if enterprise is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "企业不存在"})
 
         # 状态迁移：PENDING -> APPROVED
+        before_status = b.status
         b.status = UserEnterpriseBindingStatus.APPROVED.value
 
         # 生效写入 users（design.md：通过后获得 EMPLOYEE）
         user.enterprise_id = enterprise.id
         user.enterprise_name = enterprise.name
-        user.binding_time = datetime.utcnow()
+        user.binding_time = datetime.now(tz=UTC)
         identities, _member_valid_until = await compute_identities_and_member_valid_until(session=session, user=user)
         user.identities = identities
+
+        session.add(
+            AuditLog(
+                id=str(uuid4()),
+                actor_type=AuditActorType.ADMIN.value,
+                actor_id=admin_id,
+                action=AuditAction.UPDATE.value,
+                resource_type="ENTERPRISE_BINDING_REVIEW",
+                resource_id=str(b.id),
+                summary="ADMIN 审核通过企业绑定",
+                ip=getattr(getattr(request, "client", None), "host", None),
+                user_agent=request.headers.get("User-Agent"),
+                metadata_json={
+                    "requestId": request.state.request_id,
+                    "bindingId": str(b.id),
+                    "userId": str(b.user_id),
+                    "enterpriseId": str(b.enterprise_id),
+                    "beforeStatus": str(before_status),
+                    "afterStatus": str(b.status),
+                },
+            )
+        )
 
         await session.commit()
         await session.refresh(b)
@@ -408,10 +503,9 @@ async def admin_approve_enterprise_binding(
 async def admin_reject_enterprise_binding(
     request: Request,
     id: str,
-    authorization: str | None = Header(default=None),
+    _admin: ActorContext = Depends(require_admin_phone_bound),
 ):
-    await _require_admin(authorization)
-
+    admin_id = str(_admin.sub)
     session_factory = get_session_factory()
     async with session_factory() as session:
         b = (
@@ -420,11 +514,43 @@ async def admin_reject_enterprise_binding(
         if b is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "绑定关系不存在"})
 
+        # 幂等 no-op：同一目标状态重复提交 -> 200（不刷审计）
+        if b.status == UserEnterpriseBindingStatus.REJECTED.value:
+            return ok(data={"id": b.id, "status": b.status}, request_id=request.state.request_id)
+
+        # 非法迁移：已 APPROVED 仍 reject
         if b.status != UserEnterpriseBindingStatus.PENDING.value:
-            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "绑定状态不允许驳回"})
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "INVALID_STATE_TRANSITION", "message": "绑定状态不允许驳回"},
+            )
 
         # 状态迁移：PENDING -> REJECTED
+        before_status = b.status
         b.status = UserEnterpriseBindingStatus.REJECTED.value
+
+        session.add(
+            AuditLog(
+                id=str(uuid4()),
+                actor_type=AuditActorType.ADMIN.value,
+                actor_id=admin_id,
+                action=AuditAction.UPDATE.value,
+                resource_type="ENTERPRISE_BINDING_REVIEW",
+                resource_id=str(b.id),
+                summary="ADMIN 驳回企业绑定",
+                ip=getattr(getattr(request, "client", None), "host", None),
+                user_agent=request.headers.get("User-Agent"),
+                metadata_json={
+                    "requestId": request.state.request_id,
+                    "bindingId": str(b.id),
+                    "userId": str(b.user_id),
+                    "enterpriseId": str(b.enterprise_id),
+                    "beforeStatus": str(before_status),
+                    "afterStatus": str(b.status),
+                },
+            )
+        )
+
         await session.commit()
         await session.refresh(b)
 
