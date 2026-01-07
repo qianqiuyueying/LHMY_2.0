@@ -14,6 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import RedemptionMethod, RedemptionStatus
+from app.utils.datetime_utc import utcnow
 
 
 class RedemptionRecord(Base):
@@ -48,7 +49,7 @@ class RedemptionRecord(Base):
     operator_id: Mapped[str] = mapped_column(String(36), nullable=False, comment="操作人ID")
 
     redemption_time: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, comment="核销时间"
+        DateTime, nullable=False, default=utcnow, comment="核销时间"
     )
     service_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="服务完成时间")
 

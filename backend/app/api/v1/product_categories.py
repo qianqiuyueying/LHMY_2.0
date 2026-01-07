@@ -20,6 +20,7 @@ from app.utils.response import ok
 from app.api.v1.deps import require_admin
 from app.services.rbac import ActorContext
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["product-categories"])
 
@@ -40,8 +41,8 @@ def _dto(c: ProductCategory) -> dict:
         parentId=c.parent_id,
         sort=c.sort,
         status=c.status,
-        createdAt=c.created_at.astimezone().isoformat(),
-        updatedAt=c.updated_at.astimezone().isoformat(),
+        createdAt=_iso(c.created_at),
+        updatedAt=_iso(c.updated_at),
     ).model_dump()
 
 

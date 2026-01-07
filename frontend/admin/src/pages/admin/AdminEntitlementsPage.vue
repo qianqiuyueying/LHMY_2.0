@@ -6,6 +6,7 @@ import type { PageResp } from '../../lib/pagination'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type EntitlementItem = {
   id: string
@@ -234,7 +235,7 @@ onMounted(load)
       </el-table>
 
       <el-table v-else-if="activeTab === 'REDEMPTIONS'" :data="redemptions" :loading="loading" style="width: 100%">
-        <el-table-column prop="redemptionTime" label="时间" width="200" />
+        <el-table-column prop="redemptionTime" label="时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column prop="status" label="状态" width="140" />
         <el-table-column prop="serviceType" label="服务类别" width="160" />
         <el-table-column prop="userId" label="用户ID（userId）" width="220" />
@@ -245,7 +246,7 @@ onMounted(load)
       </el-table>
 
       <el-table v-else :data="transfers" :loading="loading" style="width: 100%">
-        <el-table-column prop="transferredAt" label="时间" width="200" />
+        <el-table-column prop="transferredAt" label="时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column prop="fromOwnerId" label="转出方（fromOwnerId）" width="240" />
         <el-table-column prop="toOwnerId" label="转入方（toOwnerId）" width="240" />
         <el-table-column prop="entitlementId" label="权益ID（entitlementId）" width="240" />

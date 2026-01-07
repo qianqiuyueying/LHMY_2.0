@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { apiRequest } from '../../lib/api'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
+import { formatBeijingDateTime } from '../../lib/time'
 
 type AgreementCode = 'PROVIDER_INFRA_APPLY' | 'PROVIDER_HEALTH_CARD_APPLY' | 'H5_BUY_AGREEMENT' | 'MP_LOGIN_AGREEMENT'
 type AgreementStatus = 'DRAFT' | 'PUBLISHED' | 'OFFLINE' | string
@@ -39,6 +40,9 @@ const state = reactive({
   publishedAt: '' as string,
   updatedAt: '' as string,
 })
+
+const publishedAtBeijing = computed(() => (state.publishedAt ? formatBeijingDateTime(state.publishedAt) : ''))
+const updatedAtBeijing = computed(() => (state.updatedAt ? formatBeijingDateTime(state.updatedAt) : ''))
 
 const activeMeta = computed(() => codes.find((x) => x.code === active.value))
 
@@ -147,8 +151,9 @@ onMounted(load)
           <el-tag :type="state.status === 'PUBLISHED' ? 'success' : state.status === 'OFFLINE' ? 'warning' : 'info'">
             {{ state.status }}
           </el-tag>
-          <span style="margin-left: 10px; color: var(--lh-muted)">version={{ state.version || '0' }}</span>
-          <span style="margin-left: 10px; color: var(--lh-muted)">publishedAt={{ state.publishedAt || '—' }}</span>
+          <span style="margin-left: 10px; color: var(--lh-muted)">版本：{{ state.version || '0' }}</span>
+          <span style="margin-left: 10px; color: var(--lh-muted)">发布时间：{{ publishedAtBeijing || '—' }}</span>
+          <span style="margin-left: 10px; color: var(--lh-muted)">更新时间：{{ updatedAtBeijing || '—' }}</span>
         </el-form-item>
 
         <el-form-item label="标题">

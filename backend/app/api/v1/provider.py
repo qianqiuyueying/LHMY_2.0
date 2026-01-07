@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -49,6 +49,43 @@ from app.utils.response import ok
 from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["provider"])
+
+
+_TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def _parse_beijing_day(raw: str, *, field_name: str) -> date:
+    try:
+        if len(raw) != 10:
+            raise ValueError("expected YYYY-MM-DD")
+        return date.fromisoformat(raw)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}) from exc
+
+
+def _beijing_day_range_to_utc_naive(d: date) -> tuple[datetime, datetime]:
+    start_bj = datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    next_day = d + timedelta(days=1)
+    end_bj_exclusive = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    return (
+        start_bj.astimezone(timezone.utc).replace(tzinfo=None),
+        end_bj_exclusive.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+
+
+def _parse_dt_utc_naive(raw: str, *, field_name: str) -> datetime:
+    s = str(raw or "").strip()
+    if not s:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"})
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}) from exc
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 async def _assert_tags_available(*, session, tag_type: str, tags: list[str] | None) -> None:
@@ -1248,22 +1285,23 @@ async def provider_list_redemptions(
         stmt = stmt.where(RedemptionRecord.status == status.strip())
     if operatorId and operatorId.strip():
         stmt = stmt.where(RedemptionRecord.operator_id == operatorId.strip())
+    # Spec (Provider): dateFrom/dateTo are Beijing natural days when passed as YYYY-MM-DD.
     if dateFrom:
-        try:
-            df = datetime.fromisoformat(dateFrom if len(dateFrom) > 10 else dateFrom + "T00:00:00")
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(
-                status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dateFrom 时间格式不合法"}
-            ) from exc
-        stmt = stmt.where(RedemptionRecord.redemption_time >= df)
+        s = str(dateFrom).strip()
+        if len(s) == 10:
+            d_from = _parse_beijing_day(s, field_name="dateFrom")
+            start_utc, _end_exclusive = _beijing_day_range_to_utc_naive(d_from)
+            stmt = stmt.where(RedemptionRecord.redemption_time >= start_utc)
+        else:
+            stmt = stmt.where(RedemptionRecord.redemption_time >= _parse_dt_utc_naive(s, field_name="dateFrom"))
     if dateTo:
-        try:
-            dt = datetime.fromisoformat(dateTo if len(dateTo) > 10 else dateTo + "T23:59:59")
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(
-                status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dateTo 时间格式不合法"}
-            ) from exc
-        stmt = stmt.where(RedemptionRecord.redemption_time <= dt)
+        s = str(dateTo).strip()
+        if len(s) == 10:
+            d_to = _parse_beijing_day(s, field_name="dateTo")
+            _start_utc, end_exclusive = _beijing_day_range_to_utc_naive(d_to)
+            stmt = stmt.where(RedemptionRecord.redemption_time < end_exclusive)
+        else:
+            stmt = stmt.where(RedemptionRecord.redemption_time <= _parse_dt_utc_naive(s, field_name="dateTo"))
 
     stmt = stmt.order_by(RedemptionRecord.redemption_time.desc())
     count_stmt = select(func.count()).select_from(stmt.subquery())

@@ -164,6 +164,22 @@
 - Admin 登录/登出会写入 `AuditLog`（见 `facts.md#F-BE-006`）
 - 其他高风险操作是否已审计：TBD（需在 tasks 中逐项补齐）
 
+### 3.4 时间与时区口径（审计日志查询）（你已拍板）
+
+> 目标：避免“服务器/容器时区不一致”导致审计时间展示偏移；同时让日期筛选符合运营侧的北京时间自然日直觉。
+
+- **全站契约**：见 `specs/health-services-platform/time-and-timezone.md`
+- **存储层（DB）**：统一按 **UTC** 存储（MySQL `DATETIME` 视为“UTC 的无时区时间”）
+- **API 出参（`/api/v1/admin/audit-logs`）**
+  - `createdAt`：统一输出为 **UTC** 的 ISO 8601 字符串，且必须带 `Z`（例如 `2026-01-07T12:34:56Z`）
+- **API 入参（筛选）**
+  - `dateFrom/dateTo`：前端传 `YYYY-MM-DD`（来自管理端日期选择器）
+  - 后端解释口径：按 **北京时间（UTC+8）自然日** 解释并转换为 UTC 再查询
+    - `dateFrom` → 北京时间当日 00:00:00（含）→ 转 UTC
+    - `dateTo` → 北京时间当日 23:59:59（含）；实现上建议用“次日 00:00:00（不含）”以 `<` 查询表达
+- **前端展示（Admin 审计日志页）**
+  - 列表“时间”统一展示为北京时间（UTC+8），不直接裸显示后端 `createdAt` 原文
+
 ## 4. 输入校验与注入防护
 - **参数校验**：必须在 Pydantic/业务逻辑中明确校验（例如 cycle 格式、rate 0~1、URL 必须 http(s)）
 - **JSON 校验**：配置类接口应确保 JSON 可序列化（见 `admin_website_config.py` 的 `_ensure_json_serializable`）

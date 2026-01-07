@@ -24,6 +24,7 @@ from app.models.user import User
 from app.services.rbac import ActorContext
 from app.utils.db import get_session_factory
 from app.utils.response import ok
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["admin-users"])
 
@@ -45,7 +46,7 @@ def _user_list_item(u: User) -> dict:
         "identities": u.identities or [],
         "enterpriseId": u.enterprise_id,
         "enterpriseName": u.enterprise_name,
-        "createdAt": u.created_at.astimezone().isoformat(),
+        "createdAt": _iso(u.created_at),
     }
 
 
@@ -58,9 +59,9 @@ def _user_detail(u: User) -> dict:
         "identities": u.identities or [],
         "enterpriseId": u.enterprise_id,
         "enterpriseName": u.enterprise_name,
-        "bindingTime": (u.binding_time.astimezone().isoformat() if u.binding_time else None),
-        "createdAt": u.created_at.astimezone().isoformat(),
-        "updatedAt": u.updated_at.astimezone().isoformat(),
+        "bindingTime": _iso(u.binding_time),
+        "createdAt": _iso(u.created_at),
+        "updatedAt": _iso(u.updated_at),
     }
 
 

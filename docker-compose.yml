@@ -60,6 +60,12 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env
+    # 容器内互联必须使用服务名，不要用 127.0.0.1（那是容器自己）
+    # env_file 里即使写了 127.0.0.1，这里也会覆盖，保证 docker compose 一键可用
+    environment:
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+      RABBITMQ_HOST: rabbitmq
     depends_on:
       mysql:
         condition: service_healthy
@@ -96,6 +102,10 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env
+    environment:
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+      RABBITMQ_HOST: rabbitmq
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -113,6 +123,10 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env
+    environment:
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+      RABBITMQ_HOST: rabbitmq
     depends_on:
       rabbitmq:
         condition: service_healthy

@@ -2,6 +2,7 @@
 // 订单详情
 
 const api = require('../../../utils/api')
+const { formatLocalDateTime } = require('../../../utils/time')
 
 Page({
   data: {
@@ -24,7 +25,16 @@ Page({
   // 加载订单详情
   async loadOrderDetail() {
     try {
-      const order = await api.get(`/api/v1/orders/${this.data.orderId}`)
+      const raw = await api.get(`/api/v1/orders/${this.data.orderId}`)
+      const order = {
+        ...raw,
+        // timestamp fields are UTC+Z; display as local time on user-side
+        createdAt: formatLocalDateTime(raw.createdAt),
+        paidAt: raw.paidAt ? formatLocalDateTime(raw.paidAt) : null,
+        shippedAt: raw.shippedAt ? formatLocalDateTime(raw.shippedAt) : null,
+        deliveredAt: raw.deliveredAt ? formatLocalDateTime(raw.deliveredAt) : null,
+        receivedAt: raw.receivedAt ? formatLocalDateTime(raw.receivedAt) : null
+      }
       const paymentStatusText =
         order.paymentStatus === 'PENDING'
           ? '待支付'

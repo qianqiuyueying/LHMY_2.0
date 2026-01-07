@@ -272,9 +272,10 @@
 ## [ ] BACKEND-DEDUPE-ISO 后端统一 datetime -> ISO 字符串（去重，不改行为）
 
 - **目标**：消除 `_iso(dt)` 的复制粘贴，统一到单一实现源，降低后续维护成本。
-- **实现口径（保持不变）**
+- **实现口径（已升级：全站时间契约）（你已拍板）**
+  - 全站契约：`specs/health-services-platform/time-and-timezone.md`
   - `dt is None`：返回 `None`
-  - 否则：返回 `dt.astimezone().isoformat()`
+  - 否则：输出 **UTC ISO 8601 且带 `Z`**（例如 `2026-01-07T12:34:56Z`）
 - **实现证据（已完成）**
   - 新增：
     - `backend/app/utils/datetime_iso.py`：`iso(dt: datetime | None) -> str | None`

@@ -10,6 +10,7 @@ import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
 import MarkdownIt from 'markdown-it'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type CmsChannel = {
   id: string
@@ -469,7 +470,7 @@ onMounted(async () => {
             <el-table-column prop="channelId" label="栏目" width="240" />
             <el-table-column v-if="contentFilters.scope !== 'MINI_PROGRAM'" prop="status" label="官网发布" width="120" />
             <el-table-column v-if="contentFilters.scope !== 'WEB'" prop="mpStatus" label="小程序发布" width="120" />
-            <el-table-column prop="updatedAt" label="更新时间" width="200" />
+            <el-table-column prop="updatedAt" label="更新时间" width="200" :formatter="fmtBeijingDateTime" />
             <el-table-column label="操作" width="420">
               <template #default="scope">
                 <el-button type="primary" size="small" @click="openEditContent(scope.row)">编辑</el-button>

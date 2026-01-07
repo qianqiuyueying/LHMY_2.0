@@ -161,6 +161,9 @@
 
 ### 2.7 Admin Phone Bind（绑定手机号，用于 2FA 与高风险门禁）
 > 目的：未绑定 phone 的 admin 允许登录，但在高风险操作前必须绑定手机号（你已拍板，见 `security.md#1.4.4`）。
+>
+> **规则（P0，已拍板）**
+> - `admins.phone`：**全局唯一**（一个手机号只能绑定一个 admin；允许为空）
 
 #### 2.7.1 POST /admin/auth/phone-bind/challenge
 - **用途**：对指定手机号发送绑定验证码（需要已登录 ADMIN）
@@ -180,6 +183,7 @@
   - 400 `INVALID_PHONE` / `SMS_CODE_INVALID` / `SMS_CODE_EXPIRED`
   - 429 `RATE_LIMITED`
   - 409 `STATE_CONFLICT`：已绑定（重复绑定）
+  - 409 `ALREADY_EXISTS`：手机号已被其他管理员绑定
 - **审计（必须）**：
   - action=`UPDATE`，resourceType=`ADMIN_AUTH`，resourceId=`adminId`
   - metadata：`requestId`, `phoneMasked`
@@ -210,6 +214,42 @@
 
 **证据入口**
 - `backend/app/api/v1/provider_auth.py::provider_login`
+
+### 2A.1A POST /provider/auth/register/challenge
+**用途**：发送 Provider 注册短信验证码（PUBLIC）。
+
+**请求**
+- Body：`{ phone: string }`（CN：`^1\\d{10}$`）
+
+**响应**
+- 200：`{ sent: bool, expiresInSeconds: number, resendAfterSeconds: number }`
+
+**错误码**
+- 400 `INVALID_PHONE`
+- 429 `RATE_LIMITED`
+
+**证据入口**
+- `backend/app/api/v1/provider_auth.py::provider_register_challenge`
+
+### 2A.1B POST /provider/auth/register
+**用途**：Provider 注册（创建 `Provider` + `ProviderUser(status=PENDING_REVIEW)`）（PUBLIC）。
+
+**规则（P0，已拍板）**
+- `provider_users.phone`：**角色内唯一**（同一手机号允许同时注册 dealer + provider；但在 provider 域内不可重复）
+
+**请求**
+- Body：`{ username: string, password: string, providerName: string, phone: string, smsCode: string }`
+
+**响应**
+- 200：`{ submitted: true }`
+
+**错误码**
+- 400 `INVALID_ARGUMENT` / `INVALID_PHONE` / `SMS_CODE_INVALID` / `SMS_CODE_EXPIRED`
+- 409 `ALREADY_EXISTS`：username 已存在 / phone 已存在（provider 域内）
+- 429 `RATE_LIMITED`
+
+**证据入口**
+- `backend/app/api/v1/provider_auth.py::provider_register`
 
 ### 2A.2 POST /provider/auth/refresh
 **用途**：续期 provider token；旧 token 进入 blacklist（高频）。
@@ -285,6 +325,42 @@
 
 **证据入口**
 - `backend/app/api/v1/dealer_auth.py::dealer_login`
+
+### 2B.1A POST /dealer/auth/register/challenge
+**用途**：发送 Dealer 注册短信验证码（PUBLIC）。
+
+**请求**
+- Body：`{ phone: string }`（CN：`^1\\d{10}$`）
+
+**响应**
+- 200：`{ sent: bool, expiresInSeconds: number, resendAfterSeconds: number }`
+
+**错误码**
+- 400 `INVALID_PHONE`
+- 429 `RATE_LIMITED`
+
+**证据入口**
+- `backend/app/api/v1/dealer_auth.py::dealer_register_challenge`
+
+### 2B.1B POST /dealer/auth/register
+**用途**：Dealer 注册（创建 `Dealer` + `DealerUser(status=PENDING_REVIEW)`）（PUBLIC）。
+
+**规则（P0，已拍板）**
+- `dealer_users.phone`：**角色内唯一**（同一手机号允许同时注册 dealer + provider；但在 dealer 域内不可重复）
+
+**请求**
+- Body：`{ username: string, password: string, dealerName: string, phone: string, smsCode: string }`
+
+**响应**
+- 200：`{ submitted: true }`
+
+**错误码**
+- 400 `INVALID_ARGUMENT` / `INVALID_PHONE` / `SMS_CODE_INVALID` / `SMS_CODE_EXPIRED`
+- 409 `ALREADY_EXISTS`：username 已存在 / phone 已存在（dealer 域内）
+- 429 `RATE_LIMITED`
+
+**证据入口**
+- `backend/app/api/v1/dealer_auth.py::dealer_register`
 
 ### 2B.2 POST /dealer/auth/change-password
 **用途**：修改 Dealer 自己的密码（敏感）。
@@ -736,8 +812,8 @@ AdminBookingItem（最小字段）：
 - `paymentStatus?: "PENDING"|"PAID"|"FAILED"|"REFUNDED"`
 - `dealerId?: string`
 - `providerId?: string`（后端现状：从订单明细聚合推导，若同订单存在多个 provider 则 providerId 为空）
-- `dateFrom?: string`（`YYYY-MM-DD` 或 ISO datetime；含义：createdAt >= dateFrom）
-- `dateTo?: string`（同上；createdAt <= dateTo）
+- `dateFrom?: string`（`YYYY-MM-DD`；**按北京时间（UTC+8）自然日**解释；含义：createdAt >= 北京时间(dateFrom 00:00:00)）
+- `dateTo?: string`（`YYYY-MM-DD`；**按北京时间（UTC+8）自然日**解释；含义：createdAt <= 北京时间(dateTo 23:59:59)；实现上建议用“次日 00:00:00（不含）”做 `<` 查询）
 - `page?: number`（默认 1，>=1）
 - `pageSize?: number`（默认 20，建议 10/20/50/100，后端上限 100）
 
@@ -770,6 +846,10 @@ AdminOrderItem（与现状实现对齐的最小字段）：
 - `providerId?: string|null`
 - `createdAt: string`
 - `paidAt?: string|null`
+
+**时间与时区口径（必做，样板域）**
+- **出参（timestamp 字段）**：`createdAt/paidAt/shippedAt/deliveredAt/receivedAt/reservationExpiresAt` 统一输出为 **UTC** 的 ISO 8601 字符串，且必须带 `Z`（例如 `2026-01-07T12:34:56Z`）
+- **入参（筛选）**：`dateFrom/dateTo` 为 `YYYY-MM-DD`，统一按 **北京时间（UTC+8）自然日**口径解释，并转换为 UTC 再查询
 
 **错误码（最小集合）**
 - 400 `INVALID_ARGUMENT`：dateFrom/dateTo 格式不合法、page/pageSize 越界等
@@ -1033,8 +1113,8 @@ DealerLinkDto（与现状对齐）：
 - `orderNo?: string`
 - `phone?: string`（仅用于过滤；导出仍为 `buyerPhoneMasked`）
 - `paymentStatus?: "PENDING"|"PAID"|"FAILED"|"REFUNDED"`
-- `dateFrom: string`（必填 `YYYY-MM-DD`，按 createdAt 起）
-- `dateTo: string`（必填 `YYYY-MM-DD`，按 createdAt 止，**含当日**）
+- `dateFrom: string`（必填 `YYYY-MM-DD`；**按北京时间（UTC+8）自然日**解释；按 createdAt 起）
+- `dateTo: string`（必填 `YYYY-MM-DD`；**按北京时间（UTC+8）自然日**解释；按 createdAt 止，**含当日**；实现上建议用“次日 00:00:00（不含）”做 `<` 查询）
 
 **约束（你已拍板）**
 - **dateFrom + dateTo 必填**：任一缺失 → 400 `INVALID_ARGUMENT`
@@ -1083,6 +1163,7 @@ DealerLinkDto（与现状对齐）：
   - 响应包含 `password`（仅本次返回一次；不得有查询明文密码接口）
 - `POST /admin/provider-users/{id}/reset-password`：重置密码（高风险）
   - 404 `NOT_FOUND`
+  - 409 `STATE_CONFLICT`：账号未启用（status != ACTIVE）时禁止重置密码
   - 审计：action=`UPDATE`，resourceType=`PROVIDER_USER`（不得记录明文密码）
   - 响应包含 `password`（仅本次返回一次）
 - `POST /admin/provider-users/{id}/suspend`：冻结（状态写）
@@ -1101,6 +1182,7 @@ DealerLinkDto（与现状对齐）：
   - 响应包含 `password`（仅本次返回一次）
 - `POST /admin/provider-staff/{id}/reset-password`：重置密码（高风险）
   - 404 `NOT_FOUND`
+  - 409 `STATE_CONFLICT`：账号未启用（status != ACTIVE）时禁止重置密码
   - 审计：action=`UPDATE`，resourceType=`PROVIDER_STAFF`
 - `POST /admin/provider-staff/{id}/suspend|activate`：状态切换（幂等 no-op 同上）
 
@@ -1112,6 +1194,7 @@ DealerLinkDto（与现状对齐）：
   - 响应包含 `password`（仅本次返回一次）
 - `POST /admin/dealer-users/{id}/reset-password`：重置密码（高风险）
   - 404 `NOT_FOUND`
+  - 409 `STATE_CONFLICT`：账号未启用（status != ACTIVE）时禁止重置密码
   - 审计：action=`UPDATE`，resourceType=`DEALER_USER`
 - `POST /admin/dealer-users/{id}/suspend|activate`：状态切换（幂等 no-op 同上）
 
@@ -1722,6 +1805,7 @@ DealerLinkDto（与现状对齐）：
 - `data: { items, page, pageSize, total }`
 - item（最小字段，按前端现状 + 后端 DTO）：
   - `id, userId, orderId, entitlementType, serviceType, remainingCount, totalCount, validFrom, validUntil, status, ownerId, createdAt`
+  - 可选字段（监管/排障友好，非敏感）：`activatedAt?`（首次核销成功时间）、`usedAt?`（USED 时的最后核销时间）
   - **禁止（Admin 场景）**：`qrCode`、`voucherCode`（你已拍板：Admin 侧彻底禁止凭证明文出参）
 
 **错误码（最小）**
@@ -1742,7 +1826,7 @@ DealerLinkDto（与现状对齐）：
 
 **请求**
 - Query（后端已支持，前端当前仅使用 page/pageSize；其余保留为“可用但不强制暴露”）：
-  - `dateFrom/dateTo?: YYYY-MM-DD`（按 redemptionTime 范围；非法 → 400 `INVALID_ARGUMENT`）
+  - `dateFrom/dateTo?: YYYY-MM-DD`（按 redemptionTime 范围；**按北京时间（UTC+8）自然日**解释；非法 → 400 `INVALID_ARGUMENT`）
   - `serviceType?: string`
   - `status?: string`（`SUCCESS|FAILED`）
   - `operatorId?: string`
@@ -1773,7 +1857,7 @@ DealerLinkDto（与现状对齐）：
   - `fromOwnerId?: string`
   - `toOwnerId?: string`
   - `entitlementId?: string`
-  - `dateFrom/dateTo?: YYYY-MM-DD`（按 transferredAt；非法 → 400 `INVALID_ARGUMENT`）
+  - `dateFrom/dateTo?: YYYY-MM-DD`（按 transferredAt；**按北京时间（UTC+8）自然日**解释；非法 → 400 `INVALID_ARGUMENT`）
   - `page/pageSize`
 
 **响应**

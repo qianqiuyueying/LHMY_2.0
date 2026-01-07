@@ -14,6 +14,7 @@ from sqlalchemy.dialects.mysql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.datetime_utc import utcnow
 from app.models.enums import AfterSaleStatus, AfterSaleType
 
 
@@ -53,11 +54,11 @@ class AfterSaleCase(Base):
     )
     decision_notes: Mapped[str | None] = mapped_column(String(1024), nullable=True, comment="裁决备注")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="更新时间",
     )

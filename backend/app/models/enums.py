@@ -113,6 +113,13 @@ class PaymentStatus(StrEnum):
     REFUNDED = "REFUNDED"
 
 
+class CardStatus(StrEnum):
+    """购卡实例绑定状态（H5 匿名购卡 -> 小程序绑定，v1）。"""
+
+    UNBOUND = "UNBOUND"
+    BOUND = "BOUND"
+
+
 class AfterSaleType(StrEnum):
     """售后类型（v1 最小可执行）。"""
 

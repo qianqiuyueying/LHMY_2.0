@@ -22,6 +22,7 @@ from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.datetime_utc import utcnow
 
 
 class EntitlementTransfer(Base):
@@ -34,5 +35,5 @@ class EntitlementTransfer(Base):
     to_owner_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="转入方 ownerId")
 
     transferred_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, comment="转赠时间"
+        DateTime, nullable=False, default=utcnow, comment="转赠时间"
     )

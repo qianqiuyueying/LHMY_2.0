@@ -18,6 +18,7 @@ from app.models.notification import Notification
 from app.services.rbac import ActorContext, ActorType, require_actor_types
 from app.utils.db import get_session_factory
 from app.utils.response import ok
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["provider-notifications"])
 
@@ -29,8 +30,8 @@ def _dto(n: Notification) -> dict:
         "content": n.content,
         "category": getattr(n, "category", None) or NotificationCategory.SYSTEM.value,
         "status": n.status,
-        "createdAt": n.created_at.astimezone().isoformat(),
-        "readAt": (n.read_at.astimezone().isoformat() if n.read_at else None),
+        "createdAt": _iso(n.created_at),
+        "readAt": _iso(n.read_at),
     }
 
 

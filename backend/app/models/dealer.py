@@ -14,6 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import DealerStatus
+from app.utils.datetime_utc import utcnow
 
 
 class Dealer(Base):
@@ -36,11 +37,11 @@ class Dealer(Base):
     contact_name: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="联系人")
     contact_phone: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="联系电话")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="更新时间",
     )

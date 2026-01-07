@@ -9,6 +9,7 @@ import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
 import mpAppJson from '../../../../mini-program/app.json'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 // -----------------------------
 // Spec: REQ-ADMIN-P0-012（运营向导 + 最小概念暴露）
@@ -2262,7 +2263,7 @@ onMounted(async () => {
               </el-table-column>
         <el-table-column prop="title" label="标题" min-width="260" />
         <el-table-column prop="id" label="contentId" width="320" />
-        <el-table-column prop="updatedAt" label="更新时间" width="200" />
+        <el-table-column prop="updatedAt" label="更新时间" width="200" :formatter="fmtBeijingDateTime" />
             </el-table>
       <template #footer>
         <el-button @click="cmsPickerOpen = false">取消</el-button>
@@ -2289,7 +2290,7 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column prop="originalFilename" label="文件名" min-width="220" />
         <el-table-column prop="url" label="URL" min-width="320" />
-        <el-table-column prop="createdAt" label="创建时间" width="200" />
+        <el-table-column prop="createdAt" label="创建时间" width="200" :formatter="fmtBeijingDateTime" />
       </el-table>
       <template #footer>
         <el-button @click="assetPickerOpen = false">取消</el-button>

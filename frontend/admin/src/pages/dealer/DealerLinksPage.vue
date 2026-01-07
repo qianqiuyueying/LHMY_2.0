@@ -8,6 +8,7 @@ import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import { useRouter } from 'vue-router'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 function formatYmd(d: Date): string {
   const y = d.getFullYear()
@@ -444,7 +445,7 @@ onMounted(async () => {
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="创建时间" width="200" />
+        <el-table-column prop="createdAt" label="创建时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column label="URL" min-width="280">
           <template #default="scope">
             <el-link

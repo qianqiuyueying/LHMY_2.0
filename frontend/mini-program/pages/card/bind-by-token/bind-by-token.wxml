@@ -1,0 +1,21 @@
+<view class="page">
+  <view class="card">
+    <view class="title">绑定服务卡</view>
+    <view class="desc">
+      请确认已登录后再绑定。绑定成功后，权益将归属到当前小程序账号。
+    </view>
+  </view>
+
+  <view class="actions">
+    <button class="btn primary" loading="{{loading}}" disabled="{{loading || !token}}" bindtap="onBind">
+      {{ token ? '立即绑定' : '缺少 token' }}
+    </button>
+    <button class="btn" disabled="{{loading}}" bindtap="onGoProfile">去登录/切换账号</button>
+  </view>
+
+  <view class="meta" wx:if="{{token}}">
+    <text class="muted">token: {{token}}</text>
+  </view>
+</view>
+
+

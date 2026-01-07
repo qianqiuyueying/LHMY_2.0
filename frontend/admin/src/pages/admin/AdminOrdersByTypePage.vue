@@ -7,6 +7,7 @@ import type { PageResp } from '../../lib/pagination'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type OrderType = 'PRODUCT' | 'SERVICE_PACKAGE'
 type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
@@ -260,11 +261,11 @@ onMounted(load)
             <span v-else style="color: rgba(0,0,0,.45)">-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="fixedOrderType === 'PRODUCT'" prop="shippedAt" label="发货时间" width="200" />
+        <el-table-column v-if="fixedOrderType === 'PRODUCT'" prop="shippedAt" label="发货时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column v-if="showDealer" prop="dealerId" label="经销商ID" width="220" />
         <el-table-column prop="providerId" label="服务方ID" width="220" />
-        <el-table-column prop="createdAt" label="创建时间" width="200" />
-        <el-table-column prop="paidAt" label="支付时间" width="200" />
+        <el-table-column prop="createdAt" label="创建时间" width="200" :formatter="fmtBeijingDateTime" />
+        <el-table-column prop="paidAt" label="支付时间" width="200" :formatter="fmtBeijingDateTime" />
       </el-table>
 
       <div style="margin-top: 12px; display: flex; justify-content: flex-end">

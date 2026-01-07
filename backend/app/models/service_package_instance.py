@@ -14,6 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import ServicePackageInstanceStatus
+from app.utils.datetime_utc import utcnow
 
 
 class ServicePackageInstance(Base):
@@ -45,11 +46,11 @@ class ServicePackageInstance(Base):
         comment="状态：ACTIVE/EXPIRED/TRANSFERRED/REFUNDED",
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="更新时间",
     )

@@ -98,6 +98,8 @@ def test_admin_audit_logs_rbac_and_masking():
     assert r.status_code == 200
     items = r.json()["data"]["items"]
     assert len(items) == 1
+    # Spec: createdAt must be UTC ISO8601 with Z suffix
+    assert items[0]["createdAt"].endswith("Z")
     meta = items[0]["metadata"]
     assert meta["password"] == "***"
     assert meta["token"] == "***"

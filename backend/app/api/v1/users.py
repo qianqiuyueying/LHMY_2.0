@@ -20,6 +20,7 @@ from app.utils.db import get_session_factory
 from app.utils.jwt_token import decode_and_validate_user_token
 from app.utils.response import ok
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.date_ymd import ymd as _ymd
 
 router = APIRouter(tags=["users"])
 
@@ -61,7 +62,8 @@ async def get_profile(request: Request, authorization: str | None = Header(defau
             identities=identities,  # type: ignore[arg-type]
             enterpriseId=user.enterprise_id,
             enterpriseName=user.enterprise_name,
-            memberValidUntil=member_valid_until.astimezone().isoformat() if member_valid_until else None,
+            # business date semantics (YYYY-MM-DD), not timestamp
+            memberValidUntil=_ymd(member_valid_until),
         ).model_dump(),
         request_id=request.state.request_id,
     )
@@ -112,7 +114,8 @@ async def update_profile(request: Request, body: UpdateUserProfileBody, authoriz
             identities=identities,  # type: ignore[arg-type]
             enterpriseId=user.enterprise_id,
             enterpriseName=user.enterprise_name,
-            memberValidUntil=member_valid_until.astimezone().isoformat() if member_valid_until else None,
+            # business date semantics (YYYY-MM-DD), not timestamp
+            memberValidUntil=_ymd(member_valid_until),
         ).model_dump(),
         request_id=request.state.request_id,
     )

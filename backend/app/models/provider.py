@@ -16,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import ProviderHealthCardStatus, ProviderInfraCommerceStatus
+from app.utils.datetime_utc import utcnow
 
 
 class Provider(Base):
@@ -46,11 +47,11 @@ class Provider(Base):
     health_card_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="健行天下审核时间")
     health_card_review_notes: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="健行天下审核备注/驳回原因")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="更新时间",
     )

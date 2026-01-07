@@ -10,14 +10,21 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
+from app.models.bind_token import BindToken
+from app.models.card import Card
 from app.models.enums import CommonEnabledStatus
 from app.models.enums import LegalAgreementStatus
 from app.models.enums import DealerLinkStatus, DealerStatus
 from app.models.dealer import Dealer
 from app.models.dealer_link import DealerLink
+from app.models.enums import CardStatus
+from app.models.order import Order
+from app.models.enums import PaymentStatus
 from app.models.package_service import PackageService
 from app.models.sellable_card import SellableCard
 from app.models.service_package import ServicePackage
@@ -26,6 +33,7 @@ from app.models.system_config import SystemConfig
 from app.utils.db import get_session_factory
 from app.utils.response import ok
 from app.utils.datetime_iso import iso as _iso
+from app.services.wechat_h5_jssdk import build_wechat_jssdk_config
 
 router = APIRouter(tags=["h5-config"])
 
@@ -135,6 +143,23 @@ async def h5_get_mini_program_launch(request: Request):
             "fallbackText": raw.get("fallbackText"),
             "version": str(raw.get("version") or "0"),
         },
+        request_id=request.state.request_id,
+    )
+
+
+@router.get("/h5/wechat/jssdk-config")
+async def h5_get_wechat_jssdk_config(request: Request, url: str):
+    """H5：微信 JS-SDK 初始化参数（用于 wx-open-launch-weapp，一键拉起小程序）。"""
+
+    try:
+        cfg = await build_wechat_jssdk_config(url=url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": str(exc)}) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": "微信 JS-SDK 配置生成失败"}) from exc
+
+    return ok(
+        data={"appId": cfg.appId, "timestamp": cfg.timestamp, "nonceStr": cfg.nonceStr, "signature": cfg.signature},
         request_id=request.state.request_id,
     )
 
@@ -418,4 +443,87 @@ async def h5_list_dealer_cards(request: Request, dealerLinkId: str):
             )
 
         return ok(data={"items": out}, request_id=request.state.request_id)
+
+
+@router.get("/h5/orders/{orderId}/bind-token")
+async def h5_get_order_bind_token(request: Request, orderId: str):
+    """H5：按订单号读取 bind_token（只读，无需登录）。
+
+    v1 约束：
+    - Card.id = Order.id（一单一张卡）
+    - 返回未过期且未使用的 bind_token；若支付回调尚未发卡则返回 null
+    """
+
+    oid = str(orderId or "").strip()
+    if not oid:
+        from fastapi import HTTPException  # noqa: WPS433
+
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "orderId 必填"})
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        o = (await session.scalars(select(Order).where(Order.id == oid).limit(1))).first()
+        if o is None:
+            from fastapi import HTTPException  # noqa: WPS433
+
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在"})
+
+        card_id = oid
+        card = (await session.scalars(select(Card).where(Card.id == card_id).limit(1))).first()
+        if card is None:
+            # 支付回调可能尚未发卡：返回空字段，H5 可轮询
+            return ok(
+                data={"orderId": oid, "cardId": card_id, "cardStatus": None, "bindToken": None, "expiresAt": None},
+                request_id=request.state.request_id,
+            )
+
+        card_status = str(card.status or "")
+        if card_status == CardStatus.BOUND.value:
+            # 已绑定：不再返回 token
+            return ok(
+                data={
+                    "orderId": oid,
+                    "cardId": card_id,
+                    "cardStatus": CardStatus.BOUND.value,
+                    "bindToken": None,
+                    "expiresAt": None,
+                },
+                request_id=request.state.request_id,
+            )
+
+        # 仅当订单已支付成功且卡未绑定时，才返回 token（避免“未支付也给入口”）
+        if str(o.payment_status or "") != PaymentStatus.PAID.value:
+            return ok(
+                data={
+                    "orderId": oid,
+                    "cardId": card_id,
+                    "cardStatus": CardStatus.UNBOUND.value,
+                    "bindToken": None,
+                    "expiresAt": None,
+                },
+                request_id=request.state.request_id,
+            )
+
+        now = datetime.now(tz=UTC).replace(tzinfo=None)
+        bt = (
+            await session.scalars(
+                select(BindToken)
+                .where(
+                    BindToken.card_id == card_id,
+                    BindToken.used_at.is_(None),
+                    BindToken.expires_at > now,
+                )
+                .limit(1)
+            )
+        ).first()
+        return ok(
+            data={
+                "orderId": oid,
+                "cardId": card_id,
+                "cardStatus": CardStatus.UNBOUND.value,
+                "bindToken": (bt.token if bt else None),
+                "expiresAt": (bt.expires_at.isoformat() if bt and bt.expires_at else None),
+            },
+            request_id=request.state.request_id,
+        )
 

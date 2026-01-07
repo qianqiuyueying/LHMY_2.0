@@ -18,6 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import PaymentMethod, PaymentStatus
+from app.utils.datetime_utc import utcnow
 
 
 class Payment(Base):
@@ -45,11 +46,11 @@ class Payment(Base):
     # 支付渠道返回的原始字段（最小口径：保留 JSON 便于排障与扩展）
     provider_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="渠道原始返回")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="更新时间",
     )

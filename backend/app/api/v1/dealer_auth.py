@@ -14,6 +14,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.dealer import Dealer
 from app.models.dealer_user import DealerUser
@@ -211,6 +212,14 @@ async def dealer_register(request: Request, body: DealerRegisterBody):
         if existing is not None:
             raise HTTPException(status_code=409, detail={"code": "ALREADY_EXISTS", "message": "username 已存在"})
 
+        # 规格：dealer_users.phone 角色内唯一（dealer 域内）
+        if phone:
+            existing_phone = (
+                await session.scalars(select(DealerUser).where(DealerUser.phone == phone).limit(1))
+            ).first()
+            if existing_phone is not None:
+                raise HTTPException(status_code=409, detail={"code": "ALREADY_EXISTS", "message": "手机号已注册"})
+
         dealer_id = str(uuid4())
         user_id = str(uuid4())
         session.add(Dealer(id=dealer_id, name=dealer_name, status=DealerStatus.ACTIVE.value))
@@ -221,6 +230,7 @@ async def dealer_register(request: Request, body: DealerRegisterBody):
                 username=username,
                 password_hash=hash_password(password=str(body.password or "")),
                 status="PENDING_REVIEW",
+                phone=phone or None,
             )
         )
         session.add(
@@ -244,7 +254,11 @@ async def dealer_register(request: Request, body: DealerRegisterBody):
                 },
             )
         )
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            # 并发/竞态兜底：username/phone 唯一索引冲突
+            raise HTTPException(status_code=409, detail={"code": "ALREADY_EXISTS", "message": "资源已存在"}) from exc
 
     return ok(data={"submitted": True}, request_id=request.state.request_id)
 

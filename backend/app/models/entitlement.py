@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import EntitlementStatus, EntitlementType
+from app.utils.datetime_utc import utcnow
 
 
 class Entitlement(Base):
@@ -69,4 +70,4 @@ class Entitlement(Base):
     activator_id: Mapped[str] = mapped_column(String(36), nullable=False, default="", comment="激活者")
     current_user_id: Mapped[str] = mapped_column(String(36), nullable=False, default="", comment="当前使用者")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")

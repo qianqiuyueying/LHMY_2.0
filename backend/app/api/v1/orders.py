@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 import base64
 import json
 from typing import Literal, Sequence
@@ -65,6 +65,7 @@ from app.utils.jwt_token import decode_and_validate_user_token
 from app.utils.redis_client import get_redis
 from app.utils.response import fail, ok
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
 from app.utils.settings import settings
 
 router = APIRouter(tags=["orders"])
@@ -299,15 +300,33 @@ def _mask_phone(phone: str | None) -> str | None:
     return f"{s[:3]}****{s[-4:]}"
 
 
-def _parse_dt(raw: str, *, field_name: str) -> datetime:
+_TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def _parse_beijing_day(raw: str, *, field_name: str) -> date:
+    """Parse YYYY-MM-DD from admin date picker. Interpreted as Beijing (UTC+8) natural day."""
     try:
-        if len(raw) == 10:
-            return datetime.fromisoformat(raw + "T00:00:00")
-        return datetime.fromisoformat(raw)
+        if len(raw) != 10:
+            raise ValueError("expected YYYY-MM-DD")
+        return date.fromisoformat(raw)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}
         ) from exc
+
+
+def _beijing_day_range_to_utc_naive(d: date) -> tuple[datetime, datetime]:
+    """Convert Beijing natural day to [start, endExclusive) in naive UTC datetimes.
+
+    DB stores UTC in naive DATETIME, so we must convert Beijing day boundary to UTC before filtering.
+    """
+    start_bj = datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    next_day = d + timedelta(days=1)
+    end_bj_exclusive = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    return (
+        start_bj.astimezone(timezone.utc).replace(tzinfo=None),
+        end_bj_exclusive.astimezone(timezone.utc).replace(tzinfo=None),
+    )
 
 
 def _user_context_from_authorization(authorization: str | None, *, require_channel: str | None = None) -> dict:
@@ -352,18 +371,16 @@ def _order_dto(o: Order, items: Sequence[OrderItem]) -> dict:
         "goodsAmount": float(getattr(o, "goods_amount", 0.0) or 0.0),
         "shippingAmount": float(getattr(o, "shipping_amount", 0.0) or 0.0),
         "shippingAddress": getattr(o, "shipping_address_json", None),
-        "reservationExpiresAt": (
-            o.reservation_expires_at.astimezone().isoformat() if getattr(o, "reservation_expires_at", None) else None
-        ),
+        "reservationExpiresAt": _iso(getattr(o, "reservation_expires_at", None)),
         "shippingCarrier": getattr(o, "shipping_carrier", None),
         "shippingTrackingNo": getattr(o, "shipping_tracking_no", None),
-        "shippedAt": getattr(o, "shipped_at", None).astimezone().isoformat() if getattr(o, "shipped_at", None) else None,
-        "deliveredAt": getattr(o, "delivered_at", None).astimezone().isoformat() if getattr(o, "delivered_at", None) else None,
-        "receivedAt": getattr(o, "received_at", None).astimezone().isoformat() if getattr(o, "received_at", None) else None,
+        "shippedAt": _iso(getattr(o, "shipped_at", None)),
+        "deliveredAt": _iso(getattr(o, "delivered_at", None)),
+        "receivedAt": _iso(getattr(o, "received_at", None)),
         "items": [_order_item_dto(x) for x in items],
-        "createdAt": o.created_at.astimezone().isoformat(),
-        "paidAt": o.paid_at.astimezone().isoformat() if o.paid_at else None,
-        "confirmedAt": o.confirmed_at.astimezone().isoformat() if o.confirmed_at else None,
+        "createdAt": _iso(o.created_at),
+        "paidAt": _iso(o.paid_at),
+        "confirmedAt": _iso(o.confirmed_at),
     }
 
 
@@ -427,20 +444,6 @@ async def create_order(
     nonce: str | None = None,
     sign: str | None = None,
 ):
-    user_ctx = _user_context_from_authorization(authorization)
-    user_id = user_ctx["userId"]
-    channel = str(user_ctx.get("channel", ""))
-
-    idem_key = _require_idempotency_key(idempotency_key)
-    replay = await _idempotency_replay_if_exists(
-        request=request,
-        operation="create_order",
-        actor_id=user_id,
-        idempotency_key=idem_key,
-    )
-    if replay is not None:
-        return replay
-
     # 订单类型校验
     try:
         order_type = OrderType(body.orderType)
@@ -449,11 +452,47 @@ async def create_order(
             status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "orderType 不合法"}
         ) from exc
 
+    # vNext：SERVICE_PACKAGE 下单必须来自 dealerLinkId（长期投放入口，避免 10 分钟签名过期问题）
+    # 兼容：旧的 dealerId/ts/nonce/sign 校验能力保留，但不再作为服务包购买主入口参数。
+    dealer_link_id = str(dealerLinkId or "").strip() or None
+    if dealer_link_id and (dealerId or ts is not None or nonce or sign):
+        raise HTTPException(
+            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dealerLinkId 与经销商签名参数不可同时使用"}
+        )
+
+    # H5 v1：允许匿名下单（不建立登录态，不依赖 token）
+    is_h5_anonymous = not (authorization or "").strip()
+    if is_h5_anonymous:
+        # 匿名仅允许 SERVICE_PACKAGE（购卡）
+        if order_type != OrderType.SERVICE_PACKAGE:
+            raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "匿名仅允许购卡下单"})
+        if not dealer_link_id:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_ARGUMENT", "message": "缺少 dealerLinkId（请使用经销商投放链接打开）"},
+            )
+        channel = "H5"
+        user_id = ""  # v1：订单落库时改写为 orderId（见下方 Order.user_id）
+        idem_actor_id = f"H5:{dealer_link_id}"
+    else:
+        user_ctx = _user_context_from_authorization(authorization)
+        user_id = user_ctx["userId"]
+        channel = str(user_ctx.get("channel", ""))
+        idem_actor_id = user_id
+
+    idem_key = _require_idempotency_key(idempotency_key)
+    replay = await _idempotency_replay_if_exists(
+        request=request,
+        operation="create_order",
+        actor_id=idem_actor_id,
+        idempotency_key=idem_key,
+    )
+    if replay is not None:
+        return replay
+
     # v1：小程序端不允许创建 SERVICE_PACKAGE（购买入口在 H5）
     if order_type == OrderType.SERVICE_PACKAGE and channel != "H5":
-        raise HTTPException(
-            status_code=403, detail={"code": "ORDER_TYPE_NOT_ALLOWED", "message": "不允许创建该类型订单"}
-        )
+        raise HTTPException(status_code=403, detail={"code": "ORDER_TYPE_NOT_ALLOWED", "message": "不允许创建该类型订单"})
 
     item_types = []
     for it in body.items:
@@ -469,18 +508,15 @@ async def create_order(
             status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "orderType 与 items.itemType 不一致"}
         )
 
-    # vNext：SERVICE_PACKAGE 下单必须来自 dealerLinkId（长期投放入口，避免 10 分钟签名过期问题）
-    # 兼容：旧的 dealerId/ts/nonce/sign 校验能力保留，但不再作为服务包购买主入口参数。
-    dealer_link_id = str(dealerLinkId or "").strip() or None
-    if dealer_link_id and (dealerId or ts is not None or nonce or sign):
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dealerLinkId 与经销商签名参数不可同时使用"})
-
     dealer_id_to_bind: str | None = None
     if order_type == OrderType.SERVICE_PACKAGE:
         if channel != "H5":
             raise HTTPException(status_code=403, detail={"code": "ORDER_TYPE_NOT_ALLOWED", "message": "不允许创建该类型订单"})
         if not dealer_link_id:
             raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "缺少 dealerLinkId（请使用经销商投放链接打开）"})
+        # v1：一单一张卡（quantity=1；items 长度也限制为 1，避免隐式多卡）
+        if len(body.items) != 1 or int(body.items[0].quantity or 0) != 1:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "v1 仅支持购买 1 张"})
     else:
         # PRODUCT 订单仍允许（可选）携带经销商签名参数
         if dealerId or ts is not None or nonce or sign:
@@ -514,8 +550,10 @@ async def create_order(
     session_factory = get_session_factory()
     async with session_factory() as session:
         # 用户身份（用于计价）：以后端为准；小程序展示可本地计算，但下单必须用服务端结果落单
-        user = (await session.scalars(select(User).where(User.id == user_id).limit(1))).first()
-        identities = (user.identities or []) if user is not None else []
+        identities = []
+        if not is_h5_anonymous:
+            user = (await session.scalars(select(User).where(User.id == user_id).limit(1))).first()
+            identities = (user.identities or []) if user is not None else []
         if dealer_link_id:
             # dealerLinkId 绑定经销商（SERVICE_PACKAGE 必走此分支）
             from app.models.dealer_link import DealerLink  # noqa: WPS433
@@ -817,9 +855,12 @@ async def create_order(
         if order_type == OrderType.PRODUCT and product_fulfillment == ProductFulfillmentType.PHYSICAL_GOODS.value:
             reservation_expires_at = datetime.utcnow() + timedelta(seconds=int(settings.order_payment_timeout_seconds or 900))
 
+        order_id = str(uuid4())
+        # v1（H5 匿名购卡）：Order.user_id 不再表示真实用户，写为 orderId（也即 cardId）
+        order_user_id = order_id if is_h5_anonymous and order_type == OrderType.SERVICE_PACKAGE else user_id
         o = Order(
-            id=str(uuid4()),
-            user_id=user_id,
+            id=order_id,
+            user_id=order_user_id,
             order_type=order_type.value,
             total_amount=float(total_amount),
             payment_method=PaymentMethod.WECHAT.value,
@@ -855,7 +896,7 @@ async def create_order(
     await idem.set(
         operation="create_order",
         actor_type="USER",
-        actor_id=user_id,
+        actor_id=idem_actor_id,
         idempotency_key=idem_key,
         result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
     )
@@ -978,10 +1019,16 @@ async def admin_list_orders(
     if providerId and providerId.strip():
         stmt = stmt.where(provider_id_expr == providerId.strip())
 
+    # Spec (Admin): dateFrom/dateTo are YYYY-MM-DD interpreted as Beijing natural days.
     if dateFrom:
-        stmt = stmt.where(Order.created_at >= _parse_dt(str(dateFrom), field_name="dateFrom"))
+        d_from = _parse_beijing_day(str(dateFrom), field_name="dateFrom")
+        start_utc_naive, _end_utc_naive_exclusive = _beijing_day_range_to_utc_naive(d_from)
+        stmt = stmt.where(Order.created_at >= start_utc_naive)
     if dateTo:
-        stmt = stmt.where(Order.created_at <= _parse_dt(str(dateTo), field_name="dateTo"))
+        d_to = _parse_beijing_day(str(dateTo), field_name="dateTo")
+        _start_utc_naive, end_utc_naive_exclusive = _beijing_day_range_to_utc_naive(d_to)
+        # inclusive end-of-day implemented as next day start (exclusive)
+        stmt = stmt.where(Order.created_at < end_utc_naive_exclusive)
 
     stmt = stmt.order_by(Order.created_at.desc())
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -1009,11 +1056,11 @@ async def admin_list_orders(
                 "shippingCarrier": getattr(o, "shipping_carrier", None),
                 # 规格（TASK-P0-006）：Admin 不出运单号明文，仅 last4
                 "trackingNoLast4": _mask_tracking_no_last4(getattr(o, "shipping_tracking_no", None)),
-                "shippedAt": getattr(o, "shipped_at", None).astimezone().isoformat() if getattr(o, "shipped_at", None) else None,
+                "shippedAt": _iso(getattr(o, "shipped_at", None)),
                 "dealerId": o.dealer_id,
                 "providerId": provider_id,
-                "createdAt": o.created_at.astimezone().isoformat(),
-                "paidAt": o.paid_at.astimezone().isoformat() if o.paid_at else None,
+                "createdAt": _iso(o.created_at),
+                "paidAt": _iso(o.paid_at),
             }
         )
 
@@ -1171,6 +1218,59 @@ def _wechatpay_build_jsapi_pay_params(*, prepay_id: str) -> dict:
     }
 
 
+async def _wechatpay_h5_prepay(*, order_id: str, amount: float, client_ip: str) -> dict:
+    """微信支付 H5（MWEB）预下单（v1：H5 购卡，不依赖 openid）。
+
+    说明：
+    - 使用 v3 H5 下单接口：/v3/pay/transactions/h5
+    - 返回 h5_url，H5 端跳转该 URL 完成支付
+    """
+
+    mchid = (settings.wechat_pay_mch_id or "").strip()
+    appid = (settings.wechat_pay_appid or "").strip()
+    notify_url = (settings.wechat_pay_notify_url or "").strip()
+    base_url = (settings.wechat_pay_gateway_base_url or "").strip() or "https://api.mch.weixin.qq.com"
+
+    if not (mchid and appid and notify_url):
+        return {"ok": False, "failureReason": "微信支付配置不完整（mchid/appid/notify_url）", "raw": None}
+
+    total = int(round(float(amount) * 100))
+    if total <= 0:
+        return {"ok": False, "failureReason": "订单金额不合法", "raw": {"amount": amount}}
+
+    canonical_url = "/v3/pay/transactions/h5"
+    body = {
+        "appid": appid,
+        "mchid": mchid,
+        "description": f"订单 {order_id}",
+        "out_trade_no": order_id,
+        "notify_url": notify_url,
+        "amount": {"total": total, "currency": "CNY"},
+        "scene_info": {"payer_client_ip": str(client_ip or "").strip() or "127.0.0.1", "h5_info": {"type": "Wap"}},
+    }
+    body_json = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+
+    auth, _ts, _nonce = _wechatpay_build_authorization(method="POST", canonical_url=canonical_url, body_json=body_json)
+    headers = {
+        "Authorization": auth,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "LHMY/h5-pay",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, base_url=base_url) as client:
+            r = await client.post(canonical_url, content=body_json.encode("utf-8"), headers=headers)
+            data = r.json() if r.content else {}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "failureReason": "微信支付网络请求失败", "raw": {"error": str(exc)}}
+
+    if r.status_code not in (200, 201) or not isinstance(data, dict) or not data.get("h5_url"):
+        msg = str(data.get("message") or data.get("detail") or "") if isinstance(data, dict) else ""
+        return {"ok": False, "failureReason": msg or "微信支付下单失败", "raw": data}
+    return {"ok": True, "h5Url": str(data["h5_url"]), "raw": data}
+
+
 @router.post("/orders/{id}/pay")
 async def pay_order(
     request: Request,
@@ -1180,14 +1280,18 @@ async def pay_order(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     mockFail: int | None = None,
 ):
-    user_ctx = _user_context_from_authorization(authorization)
-    user_id = user_ctx["userId"]
+    is_h5_anonymous = not (authorization or "").strip()
+    user_id = ""
+    if not is_h5_anonymous:
+        user_ctx = _user_context_from_authorization(authorization)
+        user_id = user_ctx["userId"]
 
     idem_key = _require_idempotency_key(idempotency_key)
+    idem_actor_id = (f"H5:{id}" if is_h5_anonymous else user_id)
     replay = await _idempotency_replay_if_exists(
         request=request,
         operation="pay_order",
-        actor_id=user_id,
+        actor_id=idem_actor_id,
         idempotency_key=f"{id}:{idem_key}",
     )
     if replay is not None:
@@ -1198,7 +1302,10 @@ async def pay_order(
 
     session_factory = get_session_factory()
     async with session_factory() as session:
-        o = (await session.scalars(select(Order).where(Order.id == id, Order.user_id == user_id).limit(1))).first()
+        stmt = select(Order).where(Order.id == id).limit(1)
+        if not is_h5_anonymous:
+            stmt = stmt.where(Order.user_id == user_id)
+        o = (await session.scalars(stmt)).first()
         if o is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在"})
 
@@ -1248,20 +1355,10 @@ async def pay_order(
         session.add(payment)
         await session.commit()
 
-    # v1：真实微信支付 JSAPI 预支付
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        u = (await session.scalars(select(User).where(User.id == user_id).limit(1))).first()
-        openid = str(u.openid or "").strip() if u else ""
-
-    if not openid:
-        data = {
-            "orderId": o.id,
-            "paymentStatus": PaymentStatus.FAILED.value,
-            "failureReason": "未获取到openid，请重新登录后重试",
-        }
-    else:
-        prepay = await _wechatpay_jsapi_prepay(order_id=o.id, amount=float(o.total_amount), openid=openid)
+    # H5（v1）：SERVICE_PACKAGE 订单走微信 H5（MWEB）预下单，不依赖 openid
+    if o.order_type == OrderType.SERVICE_PACKAGE.value:
+        client_ip = getattr(getattr(request, "client", None), "host", None) or "127.0.0.1"
+        prepay = await _wechatpay_h5_prepay(order_id=o.id, amount=float(o.total_amount), client_ip=str(client_ip))
         if not prepay.get("ok"):
             data = {
                 "orderId": o.id,
@@ -1269,18 +1366,45 @@ async def pay_order(
                 "failureReason": str(prepay.get("failureReason") or "微信支付下单失败"),
             }
         else:
-            wechat_pay_params = _wechatpay_build_jsapi_pay_params(prepay_id=str(prepay["prepayId"]))
             data = {
                 "orderId": o.id,
                 "paymentStatus": PaymentStatus.PENDING.value,
-                "wechatPayParams": wechat_pay_params,
+                "wechatH5Url": str(prepay["h5Url"]),
             }
+    else:
+        # v1：默认仍按 JSAPI（需要 openid；适用于已有登录态的端）
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            u = (await session.scalars(select(User).where(User.id == user_id).limit(1))).first()
+            openid = str(u.openid or "").strip() if u else ""
+
+        if not openid:
+            data = {
+                "orderId": o.id,
+                "paymentStatus": PaymentStatus.FAILED.value,
+                "failureReason": "未获取到openid，请重新登录后重试",
+            }
+        else:
+            prepay = await _wechatpay_jsapi_prepay(order_id=o.id, amount=float(o.total_amount), openid=openid)
+            if not prepay.get("ok"):
+                data = {
+                    "orderId": o.id,
+                    "paymentStatus": PaymentStatus.FAILED.value,
+                    "failureReason": str(prepay.get("failureReason") or "微信支付下单失败"),
+                }
+            else:
+                wechat_pay_params = _wechatpay_build_jsapi_pay_params(prepay_id=str(prepay["prepayId"]))
+                data = {
+                    "orderId": o.id,
+                    "paymentStatus": PaymentStatus.PENDING.value,
+                    "wechatPayParams": wechat_pay_params,
+                }
 
     idem = IdempotencyService(get_redis())
     await idem.set(
         operation="pay_order",
         actor_type="USER",
-        actor_id=user_id,
+        actor_id=idem_actor_id,
         idempotency_key=f"{id}:{idem_key}",
         result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
     )

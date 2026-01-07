@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -22,15 +22,46 @@ from app.utils.response import ok
 router = APIRouter(tags=["admin-audit-logs"])
 
 
-def _parse_dt(raw: str, *, field_name: str) -> datetime:
+_TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def _iso_utc_z(dt: datetime) -> str:
+    """Return ISO 8601 UTC string with 'Z' suffix, seconds precision."""
+    if dt.tzinfo is None:
+        aware = dt.replace(tzinfo=timezone.utc)
+    else:
+        aware = dt.astimezone(timezone.utc)
+    # normalize to seconds precision for stable output
+    return aware.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_beijing_day(raw: str, *, field_name: str) -> date:
     try:
-        if len(raw) == 10:
-            return datetime.fromisoformat(raw + "T00:00:00")
-        return datetime.fromisoformat(raw)
+        # Expect YYYY-MM-DD from admin date picker
+        if len(raw) != 10:
+            raise ValueError("expected YYYY-MM-DD")
+        return date.fromisoformat(raw)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}
         ) from exc
+
+
+def _beijing_day_range_to_utc_naive(d: date) -> tuple[datetime, datetime]:
+    """Convert a Beijing natural day to [start, endExclusive) in naive UTC datetimes.
+
+    Spec:
+    - dateFrom/dateTo are YYYY-MM-DD and interpreted as Beijing (UTC+8) natural days.
+    - DB stores UTC in naive DATETIME.
+    """
+
+    start_bj = datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    next_day = d + timedelta(days=1)
+    end_bj_exclusive = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    return (
+        start_bj.astimezone(timezone.utc).replace(tzinfo=None),
+        end_bj_exclusive.astimezone(timezone.utc).replace(tzinfo=None),
+    )
 
 
 def _mask_sensitive(value: Any) -> Any:
@@ -64,7 +95,8 @@ def _dto(x: AuditLog) -> dict[str, Any]:
         "ip": x.ip,
         "userAgent": x.user_agent,
         "metadata": _mask_sensitive(x.metadata_json) if x.metadata_json else None,
-        "createdAt": x.created_at.astimezone().isoformat(),
+        # Spec: output UTC ISO 8601 with Z
+        "createdAt": _iso_utc_z(x.created_at),
     }
 
 
@@ -99,10 +131,16 @@ async def admin_list_audit_logs(
         stmt = stmt.where(AuditLog.resource_id == resourceId.strip())
     if keyword and keyword.strip():
         stmt = stmt.where(AuditLog.summary.like(f"%{keyword.strip()}%"))
+    # Spec: dateFrom/dateTo are Beijing natural days (YYYY-MM-DD)
     if dateFrom:
-        stmt = stmt.where(AuditLog.created_at >= _parse_dt(str(dateFrom), field_name="dateFrom"))
+        d_from = _parse_beijing_day(str(dateFrom), field_name="dateFrom")
+        start_utc_naive, _end_utc_naive_exclusive = _beijing_day_range_to_utc_naive(d_from)
+        stmt = stmt.where(AuditLog.created_at >= start_utc_naive)
     if dateTo:
-        stmt = stmt.where(AuditLog.created_at <= _parse_dt(str(dateTo), field_name="dateTo"))
+        d_to = _parse_beijing_day(str(dateTo), field_name="dateTo")
+        # inclusive end-of-day in Beijing, implemented as next day start (exclusive)
+        _start_utc_naive, end_utc_naive_exclusive = _beijing_day_range_to_utc_naive(d_to)
+        stmt = stmt.where(AuditLog.created_at < end_utc_naive_exclusive)
 
     stmt = stmt.order_by(AuditLog.created_at.desc())
     count_stmt = select(func.count()).select_from(stmt.subquery())

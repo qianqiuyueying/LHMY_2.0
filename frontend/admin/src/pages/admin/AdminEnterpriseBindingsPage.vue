@@ -8,6 +8,7 @@ import { handleApiError } from '../../lib/error-handling'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type BindingItem = {
   id: string
@@ -151,7 +152,7 @@ onMounted(load)
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column prop="bindingTime" label="绑定时间" width="200" />
+        <el-table-column prop="bindingTime" label="绑定时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column label="操作" width="200">
           <template #default="scope">
             <el-button

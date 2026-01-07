@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from uuid import uuid4
 
@@ -34,6 +34,7 @@ from app.utils.response import ok
 from app.api.v1.deps import require_admin, require_admin_phone_bound
 from app.services.rbac import ActorContext
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["after-sales"])
 
@@ -74,8 +75,8 @@ def _dto(c: AfterSaleCase) -> dict:
         decidedBy=c.decided_by,
         decision=c.decision,
         decisionNotes=c.decision_notes,
-        createdAt=c.created_at.astimezone().isoformat(),
-        updatedAt=c.updated_at.astimezone().isoformat(),
+        createdAt=_iso(c.created_at),
+        updatedAt=_iso(c.updated_at),
     ).model_dump()
 
 
@@ -168,22 +169,36 @@ async def admin_list_after_sales(
     if status:
         stmt = stmt.where(AfterSaleCase.status == str(status))
 
-    # 时间过滤：按 created_at
-    def _parse_dt(raw: str) -> datetime:
+    # 时间过滤：按 created_at（Admin：北京时间自然日口径）
+    tz_bj = timezone(timedelta(hours=8))
+
+    def _parse_beijing_day(raw: str, *, field_name: str) -> date:
         try:
-            # 允许 YYYY-MM-DD 或 ISO8601（含时分秒/时区）
-            if len(raw) == 10:
-                return datetime.fromisoformat(raw + "T00:00:00")
-            return datetime.fromisoformat(raw)
+            if len(raw) != 10:
+                raise ValueError("expected YYYY-MM-DD")
+            return date.fromisoformat(raw)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(
-                status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "时间参数不合法"}
+                status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}
             ) from exc
 
+    def _beijing_day_range_to_utc_naive(d: date) -> tuple[datetime, datetime]:
+        start_bj = datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=tz_bj)
+        next_day = d + timedelta(days=1)
+        end_bj_exclusive = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=tz_bj)
+        return (
+            start_bj.astimezone(timezone.utc).replace(tzinfo=None),
+            end_bj_exclusive.astimezone(timezone.utc).replace(tzinfo=None),
+        )
+
     if dateFrom:
-        stmt = stmt.where(AfterSaleCase.created_at >= _parse_dt(str(dateFrom)))
+        d_from = _parse_beijing_day(str(dateFrom), field_name="dateFrom")
+        start_utc, _end_exclusive = _beijing_day_range_to_utc_naive(d_from)
+        stmt = stmt.where(AfterSaleCase.created_at >= start_utc)
     if dateTo:
-        stmt = stmt.where(AfterSaleCase.created_at <= _parse_dt(str(dateTo)))
+        d_to = _parse_beijing_day(str(dateTo), field_name="dateTo")
+        _start_utc, end_exclusive = _beijing_day_range_to_utc_naive(d_to)
+        stmt = stmt.where(AfterSaleCase.created_at < end_exclusive)
 
     stmt = stmt.order_by(AfterSaleCase.created_at.desc())
     count_stmt = select(func.count()).select_from(stmt.subquery())

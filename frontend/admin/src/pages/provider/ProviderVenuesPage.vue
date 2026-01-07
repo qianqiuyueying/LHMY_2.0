@@ -170,6 +170,12 @@ const REVIEW_LABEL: Record<ReviewStatus, string> = {
   REJECTED: '已驳回',
 }
 
+function reviewLabel(v: unknown): string {
+  const raw = String(v || '').trim() as ReviewStatus | ''
+  const key: ReviewStatus = (raw && raw in REVIEW_LABEL ? (raw as ReviewStatus) : 'DRAFT')
+  return REVIEW_LABEL[key] ?? (raw || '-')
+}
+
 function reviewTagType(status: ReviewStatus | null | undefined): 'info' | 'warning' | 'success' | 'danger' {
   const s = (status || 'DRAFT') as ReviewStatus
   if (s === 'SUBMITTED') return 'warning'
@@ -370,7 +376,7 @@ onMounted(async () => {
         <el-form-item label="场所">
           <el-tag type="info">{{ venues[0]?.name || '—' }}</el-tag>
           <el-tag v-if="currentVenue?.reviewStatus" style="margin-left: 8px" :type="reviewTagType(currentVenue?.reviewStatus)">
-            审核：{{ REVIEW_LABEL[(currentVenue.reviewStatus as any) || 'DRAFT'] ?? (currentVenue.reviewStatus || '-') }}
+            审核：{{ reviewLabel(currentVenue.reviewStatus) }}
           </el-tag>
           <el-tag v-if="currentVenue?.publishStatus" style="margin-left: 8px" :type="publishTagType(currentVenue?.publishStatus)">
             发布：{{ currentVenue.publishStatus }}

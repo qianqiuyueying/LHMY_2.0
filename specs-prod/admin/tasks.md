@@ -312,6 +312,11 @@
 - **必须覆盖能力（勾选项）**
   - [ ] **权限硬校验（后端）**：仅 ADMIN 可查询；未登录 401
   - [ ] **错误码规范化**：dateFrom/dateTo 格式错误 → 400 `INVALID_ARGUMENT`
+  - [ ] **时间口径（必做）**：
+    - 出参：`createdAt` 必须为 **UTC** 的 ISO 8601 字符串，且必须带 `Z`（例如 `2026-01-07T12:34:56Z`）
+    - 入参：`dateFrom/dateTo` 为 `YYYY-MM-DD`（管理端日期选择器），**按北京时间（UTC+8）自然日口径**解释
+      - `dateFrom`：北京时间当日 00:00:00（含）
+      - `dateTo`：北京时间当日 23:59:59（含），实现上建议转为“次日 00:00:00（不含）”做 `<` 查询
   - [ ] **审计日志**：metadata 出参必须兜底脱敏（password/token/smsCode/phone）
   - [ ] **幂等/防重复**：不适用（读接口）
   - [ ] **可观测日志字段**：requestId + filters 可定位问题；慢查询可识别
@@ -321,6 +326,7 @@
   - 未登录访问 → 401
   - ADMIN 登录后查询 → 200（分页、按 createdAt desc）
   - 传非法 dateFrom → 400 `INVALID_ARGUMENT`
+  - `dateFrom/dateTo` 过滤符合北京时间自然日直觉（例如：`dateFrom=2026-01-07&dateTo=2026-01-07` 只包含北京时间 1 月 7 日的日志）
   - metadata 中敏感字段不泄露（返回 "***"/脱敏）
 - **实现证据占位**
   - 前端：`frontend/admin/src/pages/admin/AdminAuditLogsPage.vue::load`

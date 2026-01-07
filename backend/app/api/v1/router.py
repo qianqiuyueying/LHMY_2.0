@@ -31,6 +31,7 @@ from app.api.v1.entitlements import router as entitlements_router
 from app.api.v1.health import router as health_router
 from app.api.v1.legal import router as legal_router
 from app.api.v1.mini_program_auth import router as mini_program_auth_router
+from app.api.v1.mini_program_cards import router as mini_program_cards_router
 from app.api.v1.mini_program_config import router as mini_program_config_router
 from app.api.v1.regions import router as regions_router
 from app.api.v1.h5_config import router as h5_config_router
@@ -71,6 +72,7 @@ router = APIRouter()
 router.include_router(health_router)
 router.include_router(auth_router)
 router.include_router(mini_program_auth_router)
+router.include_router(mini_program_cards_router)
 router.include_router(mini_program_config_router)
 router.include_router(regions_router)
 router.include_router(h5_config_router)

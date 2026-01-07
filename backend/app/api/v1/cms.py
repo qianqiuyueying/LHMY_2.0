@@ -21,7 +21,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import uuid4
 
@@ -44,14 +44,49 @@ from app.utils.datetime_iso import iso as _iso
 router = APIRouter(tags=["cms"])
 
 
-def _parse_dt(raw: str) -> datetime:
-    try:
-        # 允许 YYYY-MM-DD 或 ISO8601（含时分秒/时区）
-        if len(raw) == 10:
-            return datetime.fromisoformat(raw + "T00:00:00")
-        return datetime.fromisoformat(raw)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "时间参数不合法"}) from exc
+_TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def _beijing_day_start_to_utc_naive(raw_ymd: str) -> datetime:
+    d = datetime.fromisoformat(raw_ymd + "T00:00:00").replace(tzinfo=_TZ_BEIJING)
+    return d.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _beijing_day_end_to_utc_naive(raw_ymd: str) -> datetime:
+    # inclusive end-of-day: 23:59:59 in Beijing
+    d = datetime.fromisoformat(raw_ymd + "T23:59:59").replace(tzinfo=_TZ_BEIJING)
+    return d.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _parse_dt_utc_naive(raw: str) -> datetime:
+    """Parse ISO8601 or YYYY-MM-DD into naive UTC datetime for DB.
+
+    - ISO8601 may include timezone offset or 'Z' suffix
+    - naive datetime (no tzinfo) is treated as UTC (DB contract)
+    """
+    s = str(raw or "").strip()
+    if not s:
+        raise ValueError("empty")
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _parse_effective_from(raw: str) -> datetime:
+    s = str(raw or "").strip()
+    if len(s) == 10:
+        return _beijing_day_start_to_utc_naive(s)
+    return _parse_dt_utc_naive(s)
+
+
+def _parse_effective_until(raw: str) -> datetime:
+    s = str(raw or "").strip()
+    if len(s) == 10:
+        return _beijing_day_end_to_utc_naive(s)
+    return _parse_dt_utc_naive(s)
 
 
 class CmsChannelDTO(BaseModel):
@@ -479,10 +514,20 @@ async def admin_list_cms_contents(
     if keyword and keyword.strip():
         kw = f"%{keyword.strip()}%"
         stmt = stmt.where(or_(CmsContent.title.like(kw), CmsContent.summary.like(kw)))
+    # Spec (Admin): dateFrom/dateTo are Beijing natural days (YYYY-MM-DD)
     if dateFrom:
-        stmt = stmt.where(CmsContent.created_at >= _parse_dt(str(dateFrom)))
+        df = str(dateFrom).strip()
+        if len(df) == 10:
+            stmt = stmt.where(CmsContent.created_at >= _beijing_day_start_to_utc_naive(df))
+        else:
+            stmt = stmt.where(CmsContent.created_at >= _parse_dt_utc_naive(df))
     if dateTo:
-        stmt = stmt.where(CmsContent.created_at <= _parse_dt(str(dateTo)))
+        dt_s = str(dateTo).strip()
+        if len(dt_s) == 10:
+            # inclusive end-of-day
+            stmt = stmt.where(CmsContent.created_at <= _beijing_day_end_to_utc_naive(dt_s))
+        else:
+            stmt = stmt.where(CmsContent.created_at <= _parse_dt_utc_naive(dt_s))
 
     stmt = stmt.order_by(CmsContent.updated_at.desc())
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -545,8 +590,8 @@ async def admin_create_cms_content(
     _admin=Depends(require_admin),
 ):
 
-    eff_from = _parse_dt(body.effectiveFrom) if body.effectiveFrom else None
-    eff_until = _parse_dt(body.effectiveUntil) if body.effectiveUntil else None
+    eff_from = _parse_effective_from(body.effectiveFrom) if body.effectiveFrom else None
+    eff_until = _parse_effective_until(body.effectiveUntil) if body.effectiveUntil else None
     _validate_effective_range(eff_from, eff_until)
 
     session_factory = get_session_factory()
@@ -684,8 +729,8 @@ async def admin_update_cms_content(
     _admin=Depends(require_admin),
 ):
 
-    eff_from = _parse_dt(body.effectiveFrom) if body.effectiveFrom else None
-    eff_until = _parse_dt(body.effectiveUntil) if body.effectiveUntil else None
+    eff_from = _parse_effective_from(body.effectiveFrom) if body.effectiveFrom else None
+    eff_until = _parse_effective_until(body.effectiveUntil) if body.effectiveUntil else None
     _validate_effective_range(eff_from, eff_until)
 
     session_factory = get_session_factory()

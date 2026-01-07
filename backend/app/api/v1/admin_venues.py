@@ -23,6 +23,7 @@ from app.utils.response import ok
 from app.api.v1.deps import require_admin, require_admin_phone_bound
 from app.services.rbac import ActorContext
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["admin-venues"])
 
@@ -45,11 +46,9 @@ def _venue_list_item(*, v: Venue, provider_name: str | None) -> dict:
         "publishStatus": v.publish_status,
         "reviewStatus": getattr(v, "review_status", None),
         "offlineReason": getattr(v, "offline_reason", None),
-        "offlinedAt": (
-            getattr(v, "offlined_at", None).astimezone().isoformat() if getattr(v, "offlined_at", None) else None
-        ),
-        "updatedAt": v.updated_at.astimezone().isoformat(),
-        "createdAt": v.created_at.astimezone().isoformat(),
+        "offlinedAt": _iso(getattr(v, "offlined_at", None)),
+        "updatedAt": _iso(v.updated_at),
+        "createdAt": _iso(v.created_at),
     }
 
 
@@ -74,13 +73,11 @@ def _venue_detail_item(*, v: Venue, provider_name: str | None) -> dict:
         "publishStatus": v.publish_status,
         "reviewStatus": getattr(v, "review_status", None),
         "rejectReason": getattr(v, "reject_reason", None),
-        "rejectedAt": (getattr(v, "rejected_at", None).astimezone().isoformat() if getattr(v, "rejected_at", None) else None),
+        "rejectedAt": _iso(getattr(v, "rejected_at", None)),
         "offlineReason": getattr(v, "offline_reason", None),
-        "offlinedAt": (
-            getattr(v, "offlined_at", None).astimezone().isoformat() if getattr(v, "offlined_at", None) else None
-        ),
-        "updatedAt": v.updated_at.astimezone().isoformat(),
-        "createdAt": v.created_at.astimezone().isoformat(),
+        "offlinedAt": _iso(getattr(v, "offlined_at", None)),
+        "updatedAt": _iso(v.updated_at),
+        "createdAt": _iso(v.created_at),
     }
 
 

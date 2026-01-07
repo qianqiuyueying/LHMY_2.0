@@ -18,6 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import AuditAction, AuditActorType
+from app.utils.datetime_utc import utcnow
 
 
 class AuditLog(Base):
@@ -49,4 +50,4 @@ class AuditLog(Base):
         comment="元数据（禁止存敏感明文）",
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")

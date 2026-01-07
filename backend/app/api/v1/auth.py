@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Literal
 from uuid import uuid4
 
@@ -36,6 +36,7 @@ from app.utils.response import ok
 from app.models.audit_log import AuditLog
 from app.models.enums import AuditAction, AuditActorType
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["auth"])
 
@@ -335,6 +336,30 @@ def _parse_dt(raw: str, *, field_name: str) -> datetime:
         ) from exc
 
 
+_TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def _parse_beijing_day(raw: str, *, field_name: str) -> date:
+    try:
+        if len(raw) != 10:
+            raise ValueError("expected YYYY-MM-DD")
+        return date.fromisoformat(raw)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}
+        ) from exc
+
+
+def _beijing_day_range_to_utc_naive(d: date) -> tuple[datetime, datetime]:
+    start_bj = datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    next_day = d + timedelta(days=1)
+    end_bj_exclusive = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    return (
+        start_bj.astimezone(timezone.utc).replace(tzinfo=None),
+        end_bj_exclusive.astimezone(timezone.utc).replace(tzinfo=None),
+    )
+
+
 @router.get("/admin/enterprise-bindings")
 async def admin_list_enterprise_bindings(
     request: Request,
@@ -370,10 +395,15 @@ async def admin_list_enterprise_bindings(
     if enterpriseName and enterpriseName.strip():
         stmt = stmt.where(e.name.like(f"%{enterpriseName.strip()}%"))
 
+    # Spec (Admin): dateFrom/dateTo are Beijing natural days (YYYY-MM-DD)
     if dateFrom:
-        stmt = stmt.where(UserEnterpriseBinding.binding_time >= _parse_dt(str(dateFrom), field_name="dateFrom"))
+        d_from = _parse_beijing_day(str(dateFrom), field_name="dateFrom")
+        start_utc, _end_exclusive = _beijing_day_range_to_utc_naive(d_from)
+        stmt = stmt.where(UserEnterpriseBinding.binding_time >= start_utc)
     if dateTo:
-        stmt = stmt.where(UserEnterpriseBinding.binding_time <= _parse_dt(str(dateTo), field_name="dateTo"))
+        d_to = _parse_beijing_day(str(dateTo), field_name="dateTo")
+        _start_utc, end_exclusive = _beijing_day_range_to_utc_naive(d_to)
+        stmt = stmt.where(UserEnterpriseBinding.binding_time < end_exclusive)
 
     stmt = stmt.order_by(UserEnterpriseBinding.binding_time.desc())
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -393,9 +423,9 @@ async def admin_list_enterprise_bindings(
                 "enterpriseId": b.enterprise_id,
                 "enterpriseName": enterprise_name or "",
                 "status": b.status,
-                "bindingTime": b.binding_time.astimezone().isoformat(),
-                "createdAt": b.created_at.astimezone().isoformat(),
-                "updatedAt": b.updated_at.astimezone().isoformat(),
+                "bindingTime": _iso(b.binding_time),
+                "createdAt": _iso(b.created_at),
+                "updatedAt": _iso(b.updated_at),
             }
         )
 

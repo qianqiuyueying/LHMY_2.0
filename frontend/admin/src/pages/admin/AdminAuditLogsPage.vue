@@ -21,6 +21,29 @@ type AuditLog = {
   createdAt: string
 }
 
+function _fmtBeijingDateTime(isoUtc: string): string {
+  // Spec: Admin 审计日志时间统一展示为北京时间（UTC+8）
+  // 后端 createdAt 口径：UTC ISO8601 + Z，例如 2026-01-07T12:34:56Z
+  const d = new Date(isoUtc)
+  if (Number.isNaN(d.getTime())) return isoUtc
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const m: Record<string, string> = {}
+  for (const p of parts) {
+    if (p.type !== 'literal') m[p.type] = p.value
+  }
+  // YYYY-MM-DD HH:mm:ss
+  return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}:${m.second}`
+}
+
 const ACTOR_TYPE_LABEL: Record<AuditLog['actorType'], string> = {
   ADMIN: '平台运营',
   USER: '用户',
@@ -157,7 +180,11 @@ onMounted(load)
       />
       <PageEmptyState v-else-if="!loading && rows.length === 0" title="暂无审计日志" />
       <el-table v-else :data="rows" :loading="loading" style="width: 100%">
-        <el-table-column prop="createdAt" label="时间" width="200" />
+        <el-table-column label="时间" width="200">
+          <template #default="scope">
+            {{ _fmtBeijingDateTime(scope.row.createdAt) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作者类型" width="140">
           <template #default="scope">
             <el-tooltip :content="scope.row.actorType" placement="top">

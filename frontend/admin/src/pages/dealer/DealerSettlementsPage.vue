@@ -6,6 +6,7 @@ import type { PageResp } from '../../lib/pagination'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type Settlement = {
   id: string
@@ -240,8 +241,8 @@ onMounted(async () => {
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="创建时间" width="200" />
-        <el-table-column prop="settledAt" label="结算时间" width="200" />
+        <el-table-column prop="createdAt" label="创建时间" width="200" :formatter="fmtBeijingDateTime" />
+        <el-table-column prop="settledAt" label="结算时间" width="200" :formatter="fmtBeijingDateTime" />
       </el-table>
 
       <div style="margin-top: 12px; display: flex; justify-content: flex-end">

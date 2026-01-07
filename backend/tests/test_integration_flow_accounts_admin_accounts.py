@@ -97,6 +97,14 @@ def test_flow_accounts_write_ops_require_phone_bound_and_are_audited_and_status_
     )
     assert r_suspend.status_code == 200
 
+    # 规则：未启用（非 ACTIVE）账号禁止重置密码
+    r_reset_forbidden = client.post(
+        f"/api/v1/admin/provider-users/{pu_id}/reset-password",
+        headers={"Authorization": f"Bearer {token2}"},
+    )
+    assert r_reset_forbidden.status_code == 409
+    _assert_fail_envelope(r_reset_forbidden.json(), code="STATE_CONFLICT")
+
     # 状态幂等：重复 suspend 仍 200，且不应额外刷审计（最小：只断言审计数量不小于 2）
     r_suspend2 = client.post(
         f"/api/v1/admin/provider-users/{pu_id}/suspend",

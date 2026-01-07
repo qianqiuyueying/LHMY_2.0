@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import BookingConfirmationMethod, BookingSourceType, BookingStatus
+from app.utils.datetime_utc import utcnow
 
 
 class Booking(Base):
@@ -62,4 +63,4 @@ class Booking(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="取消时间")
     cancel_reason: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="取消原因")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")

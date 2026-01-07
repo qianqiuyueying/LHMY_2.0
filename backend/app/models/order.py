@@ -15,6 +15,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import OrderType, PaymentMethod, PaymentStatus
+from app.utils.datetime_utc import utcnow
 
 
 class Order(Base):
@@ -70,6 +71,6 @@ class Order(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="妥投时间")
     received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="确认收货时间")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="支付时间")
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="银行转账确认时间")

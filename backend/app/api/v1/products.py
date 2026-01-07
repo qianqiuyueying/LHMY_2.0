@@ -23,6 +23,7 @@ from app.utils.response import ok
 from app.api.v1.deps import require_admin
 from app.services.rbac import ActorContext
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["products"])
 
@@ -208,9 +209,9 @@ def _admin_product_list_item(p: Product, provider_name: str | None) -> dict:
         "shippingFee": float(p.shipping_fee or 0.0) if p.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value else None,
         "status": p.status,
         "rejectReason": getattr(p, "reject_reason", None),
-        "rejectedAt": (getattr(p, "rejected_at", None).astimezone().isoformat() if getattr(p, "rejected_at", None) else None),
-        "createdAt": p.created_at.astimezone().isoformat(),
-        "updatedAt": p.updated_at.astimezone().isoformat(),
+        "rejectedAt": _iso(getattr(p, "rejected_at", None)),
+        "createdAt": _iso(p.created_at),
+        "updatedAt": _iso(p.updated_at),
     }
 
 

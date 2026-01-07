@@ -7,6 +7,7 @@ import type { PageResp } from '../../lib/pagination'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime, formatBeijingDateTime } from '../../lib/time'
 import { handleApiError } from '../../lib/error-handling'
 
 type PublishStatus = 'DRAFT' | 'PUBLISHED' | 'OFFLINE'
@@ -77,6 +78,12 @@ const REVIEW_LABEL: Record<ReviewStatus, string> = {
   SUBMITTED: '待审核',
   APPROVED: '已通过',
   REJECTED: '已驳回',
+}
+
+function reviewLabel(v: unknown): string {
+  const raw = String(v || '').trim() as ReviewStatus | ''
+  const key: ReviewStatus = (raw && raw in REVIEW_LABEL ? (raw as ReviewStatus) : 'DRAFT')
+  return REVIEW_LABEL[key] ?? (raw || '-')
 }
 
 const loading = ref(false)
@@ -299,13 +306,13 @@ onMounted(loadCities)
               </el-tooltip>
               <el-tooltip :content="String(scope.row.reviewStatus || '')" placement="top">
                 <el-tag size="small" type="info">
-                  {{ REVIEW_LABEL[(scope.row.reviewStatus as any) || 'DRAFT'] ?? (scope.row.reviewStatus || '-') }}
+                  {{ reviewLabel(scope.row.reviewStatus) }}
                 </el-tag>
               </el-tooltip>
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="updatedAt" label="更新时间" width="200" />
+        <el-table-column prop="updatedAt" label="更新时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column label="操作" width="280">
           <template #default="scope">
             <el-button size="small" @click="openDetail(scope.row)">详情</el-button>
@@ -337,7 +344,7 @@ onMounted(loadCities)
           <el-descriptions-item label="Provider">{{ detail.providerName }}（{{ detail.providerId }}）</el-descriptions-item>
           <el-descriptions-item label="场所名称">{{ detail.name }}</el-descriptions-item>
           <el-descriptions-item label="发布状态">{{ STATUS_LABEL[detail.publishStatus] ?? detail.publishStatus }}</el-descriptions-item>
-          <el-descriptions-item label="审核状态">{{ REVIEW_LABEL[(detail.reviewStatus as any) || 'DRAFT'] ?? (detail.reviewStatus || '-') }}</el-descriptions-item>
+          <el-descriptions-item label="审核状态">{{ reviewLabel(detail.reviewStatus) }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.publishStatus === 'OFFLINE'" label="下线原因">
             {{ detail.offlineReason || '—' }}
           </el-descriptions-item>
@@ -350,7 +357,7 @@ onMounted(loadCities)
           <el-descriptions-item label="营业时间">{{ detail.businessHours || '—' }}</el-descriptions-item>
           <el-descriptions-item label="简介">{{ detail.description || '—' }}</el-descriptions-item>
           <el-descriptions-item label="标签">{{ (detail.tags || []).join('、') || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ detail.updatedAt }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ formatBeijingDateTime(detail.updatedAt) }}</el-descriptions-item>
         </el-descriptions>
 
         <div style="margin-top: 12px">

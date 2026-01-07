@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.audit_log import AuditLog
 from app.models.enums import AuditAction, AuditActorType
@@ -26,6 +27,7 @@ from app.utils.db import get_session_factory
 from app.utils.jwt_provider_token import create_provider_token, decode_and_validate_provider_token, token_blacklist_key
 from app.utils.redis_client import get_redis
 from app.utils.response import ok
+from app.utils.datetime_iso import iso as _iso
 from app.utils.settings import settings
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
@@ -311,6 +313,14 @@ async def provider_register(request: Request, body: ProviderRegisterBody):
         if existing_staff is not None:
             raise HTTPException(status_code=409, detail={"code": "ALREADY_EXISTS", "message": "username 已存在"})
 
+        # 规格：provider_users.phone 角色内唯一（provider 域内）
+        if phone:
+            existing_phone = (
+                await session.scalars(select(ProviderUser).where(ProviderUser.phone == phone).limit(1))
+            ).first()
+            if existing_phone is not None:
+                raise HTTPException(status_code=409, detail={"code": "ALREADY_EXISTS", "message": "手机号已注册"})
+
         provider_id = str(uuid4())
         user_id = str(uuid4())
         now = datetime.now(tz=UTC).replace(tzinfo=None)
@@ -330,6 +340,7 @@ async def provider_register(request: Request, body: ProviderRegisterBody):
                 username=username,
                 password_hash=hash_password(password=str(body.password or "")),
                 status="PENDING_REVIEW",
+                phone=phone or None,
             )
         )
         session.add(
@@ -350,11 +361,15 @@ async def provider_register(request: Request, body: ProviderRegisterBody):
                     "providerId": provider_id,
                     "providerName": provider_name,
                     "username": username,
-                    "submittedAt": now.isoformat(),
+                    "submittedAt": _iso(now),
                 },
             )
         )
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            # 并发/竞态兜底：username/phone 唯一索引冲突
+            raise HTTPException(status_code=409, detail={"code": "ALREADY_EXISTS", "message": "资源已存在"}) from exc
 
     return ok(data={"submitted": True}, request_id=request.state.request_id)
 

@@ -8,6 +8,7 @@ import { handleApiError } from '../../lib/error-handling'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type CmsChannel = { id: string; name: string; sort: number; status: 'ENABLED' | 'DISABLED' }
 type CmsContentListItem = {
@@ -401,7 +402,7 @@ onMounted(async () => {
               <template #default="scope">{{ _channelName(scope.row.channelId) }}</template>
             </el-table-column>
             <el-table-column prop="status" label="官网状态" width="120" />
-            <el-table-column prop="updatedAt" label="更新时间" width="200" />
+            <el-table-column prop="updatedAt" label="更新时间" width="200" :formatter="fmtBeijingDateTime" />
             <el-table-column label="操作" width="520">
               <template #default="scope">
                 <el-button size="small" @click="goEditInContentCenter(scope.row.id)">去内容中心编辑</el-button>

@@ -8,6 +8,7 @@ import { handleApiError } from '../../lib/error-handling'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type EnterpriseItem = {
   id: string
@@ -206,7 +207,7 @@ onMounted(async () => {
         <el-table-column prop="name" label="企业名称" min-width="220" />
         <el-table-column prop="cityCode" label="城市" width="160" />
         <el-table-column prop="source" label="来源" width="200" />
-        <el-table-column prop="createdAt" label="创建时间" width="200" />
+        <el-table-column prop="createdAt" label="创建时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column label="操作" width="200">
           <template #default="scope">
             <el-button type="primary" link @click="openDetail(scope.row.id)">详情</el-button>

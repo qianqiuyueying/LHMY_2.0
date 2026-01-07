@@ -21,7 +21,8 @@ import app.models  # noqa: F401
 from app.main import app
 from app.models.base import Base
 from app.models.entitlement import Entitlement
-from app.models.enums import EntitlementStatus, EntitlementType
+from app.models.enums import EntitlementStatus, EntitlementType, RedemptionMethod, RedemptionStatus
+from app.models.redemption_record import RedemptionRecord
 from app.models.user import User
 from app.utils.db import get_session_factory
 from app.utils.jwt_admin_token import create_admin_token
@@ -45,7 +46,8 @@ async def _reset_db_and_redis() -> None:
 
 
 async def _seed_user_and_entitlement(*, user_id: str, entitlement_id: str) -> None:
-    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    now = datetime(2026, 1, 7, 12, 0, 0, tzinfo=UTC).replace(tzinfo=None)
+    redeemed_at = datetime(2026, 1, 8, 1, 2, 3, tzinfo=UTC).replace(tzinfo=None)
     session_factory = get_session_factory()
     async with session_factory() as session:
         session.add(User(id=user_id, phone="13600000000", nickname="u", identities=[]))
@@ -57,7 +59,7 @@ async def _seed_user_and_entitlement(*, user_id: str, entitlement_id: str) -> No
                 order_id=str(uuid4()),
                 entitlement_type=EntitlementType.SERVICE_PACKAGE.value,
                 service_type="SVC:DEMO",
-                remaining_count=1,
+                remaining_count=0,
                 total_count=1,
                 valid_from=now - timedelta(days=1),
                 valid_until=now + timedelta(days=30),
@@ -65,11 +67,28 @@ async def _seed_user_and_entitlement(*, user_id: str, entitlement_id: str) -> No
                 applicable_regions=["CITY:110100"],
                 qr_code="PLAINTEXT_QR_PAYLOAD_SHOULD_NOT_LEAK_TO_ADMIN",
                 voucher_code="PLAINTEXT_VOUCHER_SHOULD_NOT_LEAK_TO_ADMIN",
-                status=EntitlementStatus.ACTIVE.value,
+                status=EntitlementStatus.USED.value,
                 service_package_instance_id=None,
                 activator_id="",
                 current_user_id="",
                 created_at=now,
+            )
+        )
+        session.add(
+            RedemptionRecord(
+                id=str(uuid4()),
+                entitlement_id=entitlement_id,
+                booking_id=None,
+                user_id=user_id,
+                venue_id=str(uuid4()),
+                service_type="SVC:DEMO",
+                redemption_method=RedemptionMethod.VOUCHER_CODE.value,
+                status=RedemptionStatus.SUCCESS.value,
+                failure_reason=None,
+                operator_id=str(uuid4()),
+                redemption_time=redeemed_at,
+                service_completed_at=redeemed_at,
+                notes=None,
             )
         )
         await session.commit()
@@ -117,6 +136,13 @@ def test_entitlements_only_allow_admin_or_user_and_admin_response_has_no_qr_or_v
     row = next(x for x in items_admin if x.get("id") == entitlement_id)
     assert "qrCode" not in row
     assert "voucherCode" not in row
+    # 业务日期语义：不做 UTC 转换（YYYY-MM-DD）
+    assert row["validFrom"].startswith("2026-")
+    assert row["validUntil"].startswith("2026-")
+    # timestamp：UTC+Z
+    assert str(row["createdAt"]).endswith("Z")
+    assert str(row["activatedAt"]).endswith("Z")
+    assert str(row["usedAt"]).endswith("Z")
 
     r_admin_detail = client.get(f"/api/v1/entitlements/{entitlement_id}", headers={"Authorization": f"Bearer {admin_token}"})
     assert r_admin_detail.status_code == 200
@@ -124,5 +150,7 @@ def test_entitlements_only_allow_admin_or_user_and_admin_response_has_no_qr_or_v
     assert d["id"] == entitlement_id
     assert "qrCode" not in d
     assert "voucherCode" not in d
+    assert str(d["activatedAt"]).endswith("Z")
+    assert str(d["usedAt"]).endswith("Z")
 
 

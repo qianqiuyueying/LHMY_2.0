@@ -432,6 +432,7 @@ onMounted(() => {
 }
 .cta-btn {
   width: 100%;
+  white-space: nowrap;
 }
 .price-row {
   display: grid;

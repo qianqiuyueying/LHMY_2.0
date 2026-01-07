@@ -8,6 +8,7 @@ import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
 import { handleApiError } from '../../lib/error-handling'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type ProviderUserItem = {
   id: string
@@ -307,6 +308,10 @@ async function saveCreate() {
 }
 
 async function resetPassword(row: ProviderUserItem | ProviderStaffItem | DealerUserItem | AdminUserItem) {
+  if (String((row as any).status || '').toUpperCase() !== 'ACTIVE') {
+    ElMessage.warning('账号未启用，不能重置密码')
+    return
+  }
   try {
     await ElMessageBox.confirm(`确认重置账号 ${row.username} 的密码？新密码仅显示一次。`, '重置密码', {
       type: 'warning',
@@ -545,10 +550,17 @@ onMounted(load)
             <el-tag size="small" :type="statusTagType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="创建时间" width="200" />
+        <el-table-column prop="createdAt" label="创建时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column label="操作" width="260">
           <template #default="scope">
-            <el-button type="warning" size="small" @click="resetPassword(scope.row)">重置密码</el-button>
+            <el-button
+              type="warning"
+              size="small"
+              :disabled="String(scope.row.status || '').toUpperCase() !== 'ACTIVE'"
+              @click="resetPassword(scope.row)"
+            >
+              重置密码
+            </el-button>
             <el-button
               v-if="activeTab === 'ADMIN'"
               :type="String(scope.row.status).toUpperCase() === 'ACTIVE' ? 'danger' : 'success'"

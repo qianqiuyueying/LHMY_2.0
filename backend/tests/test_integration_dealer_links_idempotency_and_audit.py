@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -18,8 +19,10 @@ from sqlalchemy import func, select
 
 import app.models  # noqa: F401
 from app.main import app
+from app.models.admin import Admin
 from app.models.audit_log import AuditLog
 from app.models.base import Base
+from app.services.password_hashing import hash_password
 from app.utils.db import get_session_factory
 from app.utils.jwt_admin_token import create_admin_token
 from app.utils.redis_client import get_redis
@@ -38,12 +41,28 @@ async def _reset_db_and_redis() -> None:
         await session.commit()
 
 
+async def _seed_admin_phone_bound(*, admin_id: str) -> None:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        session.add(
+            Admin(
+                id=admin_id,
+                username="it_admin_dealer_links",
+                password_hash=hash_password(password="Abcdef!2345"),
+                status="ACTIVE",
+                phone="13800138000",
+            )
+        )
+        await session.commit()
+
+
 def test_dealer_links_create_idempotent_and_audited_and_disable_idempotent():
     asyncio.run(_reset_db_and_redis())
 
     admin_id = "00000000-0000-0000-0000-00000000a001"
     admin_token, _jti = create_admin_token(admin_id=admin_id)
     client = TestClient(app)
+    asyncio.run(_seed_admin_phone_bound(admin_id=admin_id))
 
     # 1) Admin 创建 dealer 账号并登录拿到 dealer token
     r = client.post(
@@ -124,16 +143,18 @@ def test_dealer_links_create_requires_idempotency_key_400():
     admin_id = "00000000-0000-0000-0000-00000000a001"
     admin_token, _jti = create_admin_token(admin_id=admin_id)
     client = TestClient(app)
+    asyncio.run(_seed_admin_phone_bound(admin_id=admin_id))
 
+    username = f"it_dealer_user_links_{uuid4().hex[:8]}"
     r = client.post(
         "/api/v1/admin/dealer-users",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"username": f"it_dealer_user_links_{uuid4().hex[:8]}", "dealerName": "IT Dealer Links 2"},
+        json={"username": username, "dealerName": "IT Dealer Links 2"},
     )
     assert r.status_code == 200
     dealer_password = r.json()["data"]["password"]
 
-    r = client.post("/api/v1/dealer/auth/login", json={"username": r.json()["data"]["username"], "password": dealer_password})
+    r = client.post("/api/v1/dealer/auth/login", json={"username": username, "password": dealer_password})
     assert r.status_code == 200
     dealer_token = r.json()["data"]["token"]
 

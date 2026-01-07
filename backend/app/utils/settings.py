@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     wechat_secret: str = ""
     wechat_code_exchange_service_url: str = ""
 
+    # 微信公众号（H5 JS-SDK，用于 wx-open-launch-weapp）
+    # - 用于获取 access_token/jsapi_ticket，并对页面 URL 做签名
+    wechat_h5_appid: str = ""
+    wechat_h5_secret: str = ""
+
     # 微信支付（REQ-P0-001：回调验签/解密）
     # 说明：
     # - v1 仅用于回调（notify）侧验签与资源解密；“下单/签名/预支付”等契约需在规格补全后再实现。
@@ -140,6 +145,11 @@ class Settings(BaseSettings):
     # 电商：支付超时（用于库存占用超时释放，v2）
     # - 默认 15 分钟
     order_payment_timeout_seconds: int = 900
+
+    # bind_token 有效期（H5 匿名购卡 -> 小程序绑定，v1）
+    # - 环境变量：BIND_TOKEN_EXPIRE_SECONDS
+    # - 用户确认默认：24 小时
+    bind_token_expire_seconds: int = 86400
 
     def mysql_dsn(self) -> str:
         # SQLAlchemy async + aiomysql

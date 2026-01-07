@@ -30,6 +30,7 @@ from app.models.enums import AuditAction, AuditActorType, EnterpriseSource
 from app.services.rbac import ActorContext
 from app.utils.db import get_session_factory
 from app.utils.response import ok
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["admin-enterprises"])
 
@@ -48,9 +49,9 @@ def _dto(e: Enterprise) -> dict:
         "provinceCode": e.province_code,
         "cityCode": e.city_code,
         "source": e.source,
-        "firstSeenAt": e.first_seen_at.astimezone().isoformat(),
-        "createdAt": e.created_at.astimezone().isoformat(),
-        "updatedAt": e.updated_at.astimezone().isoformat(),
+        "firstSeenAt": _iso(e.first_seen_at),
+        "createdAt": _iso(e.created_at),
+        "updatedAt": _iso(e.updated_at),
     }
 
 

@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from uuid import uuid4
 
 from typing import cast
@@ -57,8 +57,22 @@ from app.utils.redis_client import get_redis
 from app.utils.response import fail, ok
 from app.utils.settings import settings
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
+from app.utils.date_ymd import ymd as _ymd
 
 router = APIRouter(tags=["entitlements"])
+
+# 业务日期口径：权益有效期按北京时间自然日（YYYY-MM-DD）解释。
+_TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def _today_beijing() -> date:
+    return datetime.now(tz=UTC).astimezone(_TZ_BEIJING).date()
+
+
+def _to_business_date(v: datetime | None) -> date | None:
+    s = _ymd(v)
+    return date.fromisoformat(s) if s else None
 
 async def _try_get_admin_context(authorization: str | None) -> dict | None:
     if not authorization:
@@ -81,7 +95,12 @@ def _user_context_from_authorization(authorization: str | None) -> dict:
     return {"actorType": "USER", "userId": str(payload["sub"]), "channel": str(payload.get("channel", ""))}
 
 
-def _entitlement_dto(e: Entitlement) -> dict:
+def _entitlement_dto(
+    e: Entitlement,
+    *,
+    activated_at: datetime | None = None,
+    last_redeemed_at: datetime | None = None,
+) -> dict:
     return {
         "id": e.id,
         "userId": e.user_id,
@@ -90,8 +109,9 @@ def _entitlement_dto(e: Entitlement) -> dict:
         "serviceType": e.service_type,
         "remainingCount": int(e.remaining_count),
         "totalCount": int(e.total_count),
-        "validFrom": e.valid_from.astimezone().isoformat(),
-        "validUntil": e.valid_until.astimezone().isoformat(),
+        # business date semantics (YYYY-MM-DD), not timestamp
+        "validFrom": _ymd(e.valid_from),
+        "validUntil": _ymd(e.valid_until),
         "applicableVenues": e.applicable_venues,
         "applicableRegions": e.applicable_regions,
         "qrCode": e.qr_code,
@@ -99,17 +119,46 @@ def _entitlement_dto(e: Entitlement) -> dict:
         "status": e.status,
         "servicePackageInstanceId": e.service_package_instance_id,
         "ownerId": e.owner_id,
-        "createdAt": e.created_at.astimezone().isoformat(),
+        # 事件时间戳：UTC+Z（activatedAt/usedAt 为“链路语义字段”，由核销记录派生）
+        "activatedAt": _iso(activated_at) if activated_at else None,
+        "usedAt": _iso(last_redeemed_at) if str(e.status) == EntitlementStatus.USED.value and last_redeemed_at else None,
+        "createdAt": _iso(e.created_at),
     }
 
 
-def _entitlement_dto_admin_safe(e: Entitlement) -> dict:
+def _entitlement_dto_admin_safe(
+    e: Entitlement,
+    *,
+    activated_at: datetime | None = None,
+    last_redeemed_at: datetime | None = None,
+) -> dict:
     """Admin 场景：禁止返回可用凭证明文（qrCode/voucherCode）。"""
 
-    d = _entitlement_dto(e)
+    d = _entitlement_dto(e, activated_at=activated_at, last_redeemed_at=last_redeemed_at)
     d.pop("qrCode", None)
     d.pop("voucherCode", None)
     return d
+
+
+async def _load_redemption_agg(
+    *, session, entitlement_ids: list[str]
+) -> dict[str, tuple[datetime | None, datetime | None]]:
+    """Return {entitlementId: (firstRedeemedAt, lastRedeemedAt)} for SUCCESS records."""
+    if not entitlement_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                RedemptionRecord.entitlement_id,
+                func.min(RedemptionRecord.redemption_time),
+                func.max(RedemptionRecord.redemption_time),
+            )
+            .where(RedemptionRecord.entitlement_id.in_(entitlement_ids))
+            .where(RedemptionRecord.status == RedemptionStatus.SUCCESS.value)
+            .group_by(RedemptionRecord.entitlement_id)
+        )
+    ).all()
+    return {str(eid): (first, last) for eid, first, last in rows}
 
 
 def _require_idempotency_key(idempotency_key: str | None) -> str:
@@ -242,16 +291,14 @@ async def redeem_entitlement(
         if e.status != EntitlementStatus.ACTIVE.value:
             raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "权益状态不允许核销"})
 
-        # DB 中的 datetime(v1) 为 naive（UTC 存储）；与 now(aware) 比较前需统一时区口径
-        now = datetime.now(tz=UTC)
-        valid_from = e.valid_from.replace(tzinfo=UTC) if e.valid_from and e.valid_from.tzinfo is None else e.valid_from
-        valid_until = (
-            e.valid_until.replace(tzinfo=UTC) if e.valid_until and e.valid_until.tzinfo is None else e.valid_until
-        )
+        # 业务日期语义（你已拍板）：validFrom/validUntil 是 YYYY-MM-DD，自然日口径按北京时间解释（含当日）
+        today_bj = _today_beijing()
+        valid_from_d = _to_business_date(e.valid_from)
+        valid_until_d = _to_business_date(e.valid_until)
 
-        if valid_from and valid_from > now:
+        if valid_from_d and today_bj < valid_from_d:
             raise HTTPException(status_code=409, detail={"code": "REDEEM_NOT_ALLOWED", "message": "权益未生效"})
-        if valid_until and valid_until <= now:
+        if valid_until_d and today_bj > valid_until_d:
             raise HTTPException(status_code=409, detail={"code": "REDEEM_NOT_ALLOWED", "message": "权益已过期"})
         if int(e.remaining_count) <= 0:
             raise HTTPException(status_code=409, detail={"code": "REDEEM_NOT_ALLOWED", "message": "权益次数不足"})
@@ -446,9 +493,26 @@ async def list_entitlements(
         total = int((await session.execute(count_stmt)).scalar() or 0)
         rows = (await session.scalars(stmt.offset((page - 1) * page_size).limit(page_size))).all()
 
+        agg = await _load_redemption_agg(session=session, entitlement_ids=[x.id for x in rows])
+
     return ok(
         data={
-            "items": [(_entitlement_dto_admin_safe(x) if is_admin else _entitlement_dto(x)) for x in rows],
+            "items": [
+                (
+                    _entitlement_dto_admin_safe(
+                        x,
+                        activated_at=(agg.get(x.id, (None, None))[0]),
+                        last_redeemed_at=(agg.get(x.id, (None, None))[1]),
+                    )
+                    if is_admin
+                    else _entitlement_dto(
+                        x,
+                        activated_at=(agg.get(x.id, (None, None))[0]),
+                        last_redeemed_at=(agg.get(x.id, (None, None))[1]),
+                    )
+                )
+                for x in rows
+            ],
             "page": page,
             "pageSize": page_size,
             "total": total,
@@ -473,7 +537,17 @@ async def get_entitlement_detail(request: Request, id: str, authorization: str |
         if e is None:
             raise HTTPException(status_code=404, detail={"code": "ENTITLEMENT_NOT_FOUND", "message": "权益不存在"})
 
-    return ok(data=(_entitlement_dto_admin_safe(e) if is_admin else _entitlement_dto(e)), request_id=request.state.request_id)
+        agg = await _load_redemption_agg(session=session, entitlement_ids=[e.id])
+        first_redeemed, last_redeemed = agg.get(e.id, (None, None))
+
+    return ok(
+        data=(
+            _entitlement_dto_admin_safe(e, activated_at=first_redeemed, last_redeemed_at=last_redeemed)
+            if is_admin
+            else _entitlement_dto(e, activated_at=first_redeemed, last_redeemed_at=last_redeemed)
+        ),
+        request_id=request.state.request_id,
+    )
 
 
 class TransferEntitlementBody(BaseModel):

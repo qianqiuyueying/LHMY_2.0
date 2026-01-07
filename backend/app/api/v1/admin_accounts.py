@@ -173,6 +173,8 @@ async def admin_reset_admin_user_password(
         u = (await session.scalars(select(Admin).where(Admin.id == id).limit(1))).first()
         if u is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "账号不存在"})
+        if str(u.status or "").upper() != "ACTIVE":
+            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "账号未启用，不能重置密码"})
         u.password_hash = hash_password(password=password)
         session.add(
             AuditLog(
@@ -421,6 +423,8 @@ async def admin_reset_provider_user_password(
         u = (await session.scalars(select(ProviderUser).where(ProviderUser.id == id).limit(1))).first()
         if u is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "账号不存在"})
+        if str(u.status or "").upper() != "ACTIVE":
+            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "账号未启用，不能重置密码"})
         u.password_hash = hash_password(password=password)
         session.add(
             AuditLog(
@@ -737,6 +741,8 @@ async def admin_reset_provider_staff_password(
         u = (await session.scalars(select(ProviderStaff).where(ProviderStaff.id == id).limit(1))).first()
         if u is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "账号不存在"})
+        if str(u.status or "").upper() != "ACTIVE":
+            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "账号未启用，不能重置密码"})
         u.password_hash = hash_password(password=password)
         session.add(
             AuditLog(
@@ -1052,6 +1058,8 @@ async def admin_reset_dealer_user_password(
         u = (await session.scalars(select(DealerUser).where(DealerUser.id == id).limit(1))).first()
         if u is None:
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "账号不存在"})
+        if str(u.status or "").upper() != "ACTIVE":
+            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "账号未启用，不能重置密码"})
         u.password_hash = hash_password(password=password)
         session.add(
             AuditLog(

@@ -16,6 +16,7 @@ from sqlalchemy import DateTime, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.datetime_utc import utcnow
 
 
 class Cart(Base):
@@ -24,12 +25,12 @@ class Cart(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="购物车ID")
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True, index=True, comment="用户ID")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="更新时间",
     )
 
@@ -48,12 +49,12 @@ class CartItem(Base):
     item_id: Mapped[str] = mapped_column(String(36), nullable=False, comment="商品/服务包等业务对象ID")
     quantity: Mapped[int] = mapped_column(nullable=False, default=1, comment="数量")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="更新时间",
     )
 

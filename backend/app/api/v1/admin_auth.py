@@ -14,6 +14,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.admin import Admin
 from app.models.audit_log import AuditLog
@@ -406,6 +407,13 @@ async def admin_phone_bind_verify(
         if (admin.phone or "").strip():
             raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "已绑定手机号"})
 
+        # 规格：admins.phone 全局唯一（一个手机号只能绑定一个 admin）
+        existing = (
+            await session.scalars(select(Admin).where((Admin.phone == phone) & (Admin.id != str(_admin.sub))).limit(1))
+        ).first()
+        if existing is not None:
+            raise HTTPException(status_code=409, detail={"code": "ALREADY_EXISTS", "message": "手机号已被其他管理员绑定"})
+
         admin.phone = phone
         session.add(
             AuditLog(
@@ -426,7 +434,11 @@ async def admin_phone_bind_verify(
                 },
             )
         )
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            # 并发/竞态兜底：唯一索引冲突
+            raise HTTPException(status_code=409, detail={"code": "ALREADY_EXISTS", "message": "手机号已被其他管理员绑定"}) from exc
 
     return ok(data={"ok": True, "phoneBound": True}, request_id=request.state.request_id)
 

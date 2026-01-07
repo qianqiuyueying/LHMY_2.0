@@ -13,7 +13,6 @@ v1 约束：
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Callable
 from uuid import uuid4
 
@@ -25,6 +24,7 @@ from app.models.audit_log import AuditLog
 from app.models.enums import AuditAction
 from app.services.rbac import ActorContext
 from app.utils.db import get_session_factory
+from app.utils.datetime_utc import utcnow
 
 logger = logging.getLogger("lhmy.audit")
 
@@ -162,7 +162,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 ip=_truncate(getattr(getattr(request, "client", None), "host", None), 64),
                 user_agent=_truncate(request.headers.get("User-Agent"), 512),
                 metadata_json=meta,
-                created_at=datetime.utcnow(),
+                created_at=utcnow(),
             )
 
             session_factory = get_session_factory()

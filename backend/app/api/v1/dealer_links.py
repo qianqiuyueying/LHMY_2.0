@@ -39,6 +39,8 @@ from app.utils.redis_client import get_redis
 from app.utils.response import fail, ok
 from app.utils.settings import settings
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
+from app.utils.date_ymd import ymd as _ymd
 
 router = APIRouter(tags=["dealer-links"])
 
@@ -139,13 +141,14 @@ def _dealer_link_dto(x: DealerLink) -> dict:
         "sellableCardId": x.sellable_card_id,
         "campaign": x.campaign,
         "status": x.status,
-        "validFrom": x.valid_from.astimezone().isoformat() if x.valid_from else None,
-        "validUntil": x.valid_until.astimezone().isoformat() if x.valid_until else None,
+        # business date semantics (YYYY-MM-DD), not timestamp
+        "validFrom": _ymd(x.valid_from),
+        "validUntil": _ymd(x.valid_until),
         "url": x.url,
         "uv": x.uv,
         "paidCount": x.paid_count,
-        "createdAt": x.created_at.astimezone().isoformat(),
-        "updatedAt": x.updated_at.astimezone().isoformat(),
+        "createdAt": _iso(x.created_at),
+        "updatedAt": _iso(x.updated_at),
     }
 
 

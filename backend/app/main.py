@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -103,12 +104,36 @@ def _validate_production_settings() -> None:
 def create_app() -> FastAPI:
     setup_logging()
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):  # noqa: ARG001
+        # Startup
+        try:
+            _validate_production_settings()
+        except Exception:
+            logger.exception("production settings validation failed")
+            raise
+
+        # 按规格：首次启动（v1 开发/测试）若不存在则创建初始管理员账号
+        try:
+            session_factory = get_session_factory()
+            async with session_factory() as session:
+                # 复用 admin_auth 内的最小种子逻辑（避免引入额外 seed 表/脚本）
+                from app.api.v1.admin_auth import _ensure_admin_seed  # noqa: WPS433
+
+                await _ensure_admin_seed(session)
+        except Exception:  # noqa: BLE001
+            logger.exception("admin seed failed (ignored)")
+
+        yield
+        # Shutdown（v1：无资源需要释放；DB/Redis 使用连接池/客户端自身管理）
+
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
         openapi_url="/openapi.json",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=lifespan,
     )
 
     # 静态资源（v1：上传图片落盘后从 /static 直接访问）
@@ -146,33 +171,6 @@ def create_app() -> FastAPI:
     # - endpoint: /metrics（不进入 OpenAPI）
     # - 注意：Prometheus 抓取通常发生在内网；生产环境可再加白名单/IP 访问控制
     Instrumentator().instrument(app).expose(app, include_in_schema=False, endpoint="/metrics")
-
-    @app.on_event("startup")
-    async def _startup_validate_production_settings() -> None:
-        try:
-            _validate_production_settings()
-        except Exception:
-            logger.exception("production settings validation failed")
-            raise
-
-    @app.on_event("startup")
-    async def _startup_seed_admin() -> None:
-        """按规格：首次启动（v1 开发/测试）若不存在则创建初始管理员账号。
-
-        说明：
-        - 由环境变量 `ADMIN_INIT_USERNAME/ADMIN_INIT_PASSWORD` 控制；为空则不做任何操作
-        - 启动阶段 DB 可能尚未就绪（本地开发），失败时仅记录日志，不阻断启动
-        """
-
-        try:
-            session_factory = get_session_factory()
-            async with session_factory() as session:
-                # 复用 admin_auth 内的最小种子逻辑（避免引入额外 seed 表/脚本）
-                from app.api.v1.admin_auth import _ensure_admin_seed  # noqa: WPS433
-
-                await _ensure_admin_seed(session)
-        except Exception:  # noqa: BLE001
-            logger.exception("admin seed failed (ignored)")
 
     return app
 

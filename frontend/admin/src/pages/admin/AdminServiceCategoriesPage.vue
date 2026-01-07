@@ -8,6 +8,7 @@ import { handleApiError } from '../../lib/error-handling'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type Status = 'ENABLED' | 'DISABLED'
 type Item = {
@@ -213,7 +214,7 @@ onMounted(load)
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column prop="updatedAt" label="更新时间" width="200" />
+        <el-table-column prop="updatedAt" label="更新时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column label="操作" width="220">
           <template #default="scope">
             <el-button size="small" type="primary" @click="openEdit(scope.row)">编辑</el-button>
@@ -236,7 +237,7 @@ onMounted(load)
     </el-card>
 
     <el-dialog v-model="editorOpen" :title="editorTitle" width="720px">
-      <el-form label-width="120px">
+      <el-form label-width="140px">
         <el-form-item label="code（必填）">
           <div class="lh-form-item-stack">
             <el-input

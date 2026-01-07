@@ -16,6 +16,7 @@ from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.datetime_utc import utcnow
 
 
 class DealerHierarchy(Base):
@@ -28,4 +29,4 @@ class DealerHierarchy(Base):
 
     depth: Mapped[int] = mapped_column(nullable=False, default=0, comment="深度")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")

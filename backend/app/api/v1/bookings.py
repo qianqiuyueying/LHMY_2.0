@@ -65,6 +65,8 @@ from app.utils.jwt_token import decode_and_validate_user_token
 from app.utils.redis_client import get_redis
 from app.utils.response import fail, ok
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
+from app.utils.date_ymd import ymd as _ymd
 
 router = APIRouter(tags=["bookings"])
 
@@ -139,10 +141,10 @@ def _booking_dto(b: Booking) -> dict:
         "timeSlot": b.time_slot,
         "status": b.status,
         "confirmationMethod": b.confirmation_method,
-        "confirmedAt": b.confirmed_at.astimezone().isoformat() if b.confirmed_at else None,
-        "cancelledAt": b.cancelled_at.astimezone().isoformat() if b.cancelled_at else None,
+        "confirmedAt": _iso(b.confirmed_at),
+        "cancelledAt": _iso(b.cancelled_at),
         "cancelReason": b.cancel_reason,
-        "createdAt": b.created_at.astimezone().isoformat(),
+        "createdAt": _iso(b.created_at),
     }
 
 
@@ -516,8 +518,9 @@ async def get_booking_detail(
                     "status": e.status,
                     "remainingCount": int(e.remaining_count),
                     "totalCount": int(e.total_count),
-                    "validFrom": e.valid_from.astimezone().isoformat() if e.valid_from else None,
-                    "validUntil": e.valid_until.astimezone().isoformat() if e.valid_until else None,
+                    # business date semantics (YYYY-MM-DD), not timestamp
+                    "validFrom": _ymd(e.valid_from),
+                    "validUntil": _ymd(e.valid_until),
                 }
                 if e is not None
                 else None

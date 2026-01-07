@@ -24,7 +24,7 @@
           <div class="detail-header">
             <div class="title">{{ detail.title }}</div>
             <div class="meta muted">
-              <span>{{ detail.publishedAt || '' }}</span>
+              <span>{{ detail.publishedAt ? formatLocalDateTime(detail.publishedAt) : '' }}</span>
             </div>
           </div>
           <div v-if="detail.coverImageUrl" class="detail-cover">
@@ -50,6 +50,7 @@ import { useHead } from '@vueuse/head'
 import { NAlert, NBreadcrumb, NBreadcrumbItem, NButton, NCard, NDivider, NEmpty, NSkeleton, NSpace } from 'naive-ui'
 
 import { apiGet } from '../lib/api'
+import { formatLocalDateTime } from '../lib/time'
 import type { CmsContentDetail } from '../types/cms'
 import EmptyGeoIcon from '../components/EmptyGeoIcon.vue'
 

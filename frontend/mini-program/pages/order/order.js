@@ -3,6 +3,7 @@
 
 const api = require('../../utils/api')
 const app = getApp()
+const { formatLocalDateTime } = require('../../utils/time')
 
 Page({
   data: {
@@ -96,8 +97,13 @@ Page({
       }
 
       const data = await api.get('/api/v1/orders', params)
+      const items = (data?.items || []).map((x) => ({
+        ...x,
+        // timestamp fields are UTC+Z; display as local time on user-side
+        createdAt: formatLocalDateTime(x.createdAt)
+      }))
       this.setData({
-        orders: data?.items || [],
+        orders: items,
         loading: false
       })
     } catch (error) {

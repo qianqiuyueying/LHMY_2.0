@@ -6,6 +6,7 @@ import type { PageResp } from '../../lib/pagination'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type Redemption = {
   id: string
@@ -128,7 +129,7 @@ onMounted(load)
       />
       <PageEmptyState v-else-if="!loading && rows.length === 0" title="暂无核销记录" description="可尝试：缩小日期范围或清空筛选条件。" style="margin-top: 12px" />
       <el-table v-else :data="rows" :loading="loading" style="width: 100%; margin-top: 12px">
-        <el-table-column prop="redemptionTime" label="核销时间" width="200" />
+        <el-table-column prop="redemptionTime" label="核销时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column prop="userId" label="用户ID" width="220" />
         <el-table-column prop="entitlementId" label="权益ID" width="240" />
         <el-table-column prop="serviceType" label="服务编码" width="160" />

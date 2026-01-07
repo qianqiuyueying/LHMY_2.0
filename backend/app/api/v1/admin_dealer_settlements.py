@@ -100,7 +100,7 @@ async def _get_or_create_cfg(session) -> SystemConfig:
     cfg = SystemConfig(
         id=str(uuid4()),
         key=_KEY_COMMISSION,
-        value_json={"defaultRate": 0.1, "dealerOverrides": {}, "updatedAt": datetime.now(tz=UTC).isoformat()},
+        value_json={"defaultRate": 0.1, "dealerOverrides": {}, "updatedAt": _iso(datetime.now(tz=UTC))},
         description="Dealer commission rules (v1)",
         status="ENABLED",
     )
@@ -160,7 +160,7 @@ async def admin_get_dealer_commission(request: Request, _admin=Depends(require_a
 
 @router.put("/admin/dealer-commission")
 async def admin_put_dealer_commission(request: Request, body: PutCommissionBody, admin=Depends(require_admin)):
-    now = datetime.now(tz=UTC).isoformat()
+    now = _iso(datetime.now(tz=UTC))
     value = {"defaultRate": body.defaultRate, "dealerOverrides": body.dealerOverrides or {}, "updatedAt": now}
 
     session_factory = get_session_factory()

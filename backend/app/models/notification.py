@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import NotificationCategory, NotificationReceiverType, NotificationStatus
+from app.utils.datetime_utc import utcnow
 
 
 class Notification(Base):
@@ -58,5 +59,5 @@ class Notification(Base):
         comment="状态：UNREAD/READ",
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="已读时间")

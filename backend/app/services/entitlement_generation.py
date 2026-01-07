@@ -58,7 +58,9 @@ async def _ensure_not_generated_yet(*, session, order_id: str) -> bool:
     return existing is not None
 
 
-async def generate_entitlements_after_payment_succeeded(*, session, order_id: str, qr_sign_secret: str) -> int:
+async def generate_entitlements_after_payment_succeeded(
+    *, session, order_id: str, qr_sign_secret: str, owner_id_override: str | None = None
+) -> int:
     """按订单类型生成权益。
 
     返回：本次生成的 entitlement 数量（幂等重复调用返回 0）。
@@ -72,6 +74,10 @@ async def generate_entitlements_after_payment_succeeded(*, session, order_id: st
         raise HTTPException(
             status_code=409, detail={"code": "STATE_CONFLICT", "message": "订单未支付成功，无法生成权益"}
         )
+
+    owner_id = str(owner_id_override or o.user_id or "").strip()
+    if not owner_id:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "缺少 ownerId（无法生成权益）"})
 
     if await _ensure_not_generated_yet(session=session, order_id=o.id):
         return 0
@@ -118,7 +124,7 @@ async def generate_entitlements_after_payment_succeeded(*, session, order_id: st
                     order_id=o.id,
                     order_item_id=it.id,
                     service_package_template_id=it.service_package_template_id,
-                    owner_id=o.user_id,
+                    owner_id=owner_id,
                     region_scope=it.region_scope,
                     tier=it.tier,
                     valid_from=valid_from,
@@ -139,7 +145,7 @@ async def generate_entitlements_after_payment_succeeded(*, session, order_id: st
 
                     e = Entitlement(
                         id=entitlement_id,
-                        user_id=o.user_id,
+                        user_id=owner_id,
                         order_id=o.id,
                         entitlement_type=EntitlementType.SERVICE_PACKAGE.value,
                         service_type=ps.service_type,
@@ -153,9 +159,9 @@ async def generate_entitlements_after_payment_succeeded(*, session, order_id: st
                         voucher_code=voucher_code,
                         status=EntitlementStatus.ACTIVE.value,
                         service_package_instance_id=sp_id,
-                        owner_id=o.user_id,
+                        owner_id=owner_id,
                         activator_id="",
-                        current_user_id=o.user_id,
+                        current_user_id=owner_id,
                         created_at=datetime.utcnow(),
                     )
                     validate_entitlement_shape(

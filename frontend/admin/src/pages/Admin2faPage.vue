@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiRequest } from '../lib/api'
@@ -44,6 +44,31 @@ const form = reactive({
 const sending = ref(false)
 const verifying = ref(false)
 const sentInfo = ref<{ resendAfterSeconds: number; expiresInSeconds: number } | null>(null)
+const remainingSeconds = ref<number | null>(null)
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+function startCountdown(initialSeconds: number) {
+  // 清理之前的定时器
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+
+  remainingSeconds.value = initialSeconds
+
+  countdownTimer = setInterval(() => {
+    if (remainingSeconds.value !== null && remainingSeconds.value > 0) {
+      remainingSeconds.value--
+    } else {
+      // 倒计时结束，清理定时器
+      if (countdownTimer) {
+        clearInterval(countdownTimer)
+        countdownTimer = null
+      }
+      remainingSeconds.value = null
+    }
+  }, 1000)
+}
 
 async function sendCode() {
   if (!challengeId.value) {
@@ -62,6 +87,8 @@ async function sendCode() {
       },
     )
     sentInfo.value = { expiresInSeconds: data.expiresInSeconds, resendAfterSeconds: data.resendAfterSeconds }
+    // 启动倒计时
+    startCountdown(data.expiresInSeconds)
     ElMessage.success(data.sent ? '验证码已发送' : '发送失败')
   } catch (e: any) {
     ElMessage.error(e?.apiError?.message ?? '发送失败')
@@ -96,6 +123,14 @@ async function verify() {
     verifying.value = false
   }
 }
+
+// 组件卸载时清理定时器
+onBeforeUnmount(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+})
 </script>
 
 <template>
@@ -108,7 +143,8 @@ async function verify() {
 
       <div class="actions">
         <el-button type="primary" :loading="sending" :disabled="!challengeId" @click="sendCode">发送验证码</el-button>
-        <span v-if="sentInfo" class="hint">有效期 {{ sentInfo.expiresInSeconds }} 秒</span>
+        <span v-if="remainingSeconds !== null && remainingSeconds > 0" class="hint">剩余 {{ remainingSeconds }} 秒</span>
+        <span v-else-if="remainingSeconds === 0" class="hint expired">验证码已过期</span>
       </div>
 
       <el-form label-width="90px" @submit.prevent style="margin-top: 12px">
@@ -162,5 +198,9 @@ async function verify() {
 .hint {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.55);
+}
+
+.hint.expired {
+  color: #f56c6c;
 }
 </style>

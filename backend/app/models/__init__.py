@@ -44,3 +44,5 @@ from app.models.provider_staff import ProviderStaff  # noqa: F401
 from app.models.cart import Cart, CartItem  # noqa: F401
 from app.models.service_category import ServiceCategory  # noqa: F401
 from app.models.sellable_card import SellableCard  # noqa: F401
+from app.models.card import Card  # noqa: F401
+from app.models.bind_token import BindToken  # noqa: F401

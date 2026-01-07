@@ -17,8 +17,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 
+from app.models.bind_token import BindToken
+from app.models.card import Card
+from app.models.enums import CardStatus
 from app.models.enums import OrderFulfillmentStatus, OrderType, PaymentStatus, ProductFulfillmentType
 from app.models.order import Order
 from app.models.order_item import OrderItem
@@ -63,13 +66,59 @@ async def mark_payment_succeeded(
     if provider_payload is not None:
         p.provider_payload = provider_payload
 
-    # 阶段5：支付成功后自动生成权益（服务包）
-    # - 幂等：生成逻辑内部对同一 orderId 做“已生成”检查
-    await generate_entitlements_after_payment_succeeded(
-        session=session,
-        order_id=o.id,
-        qr_sign_secret=settings.entitlement_qr_sign_secret,
-    )
+    # v1（h5-anonymous-purchase-bind-token）：
+    # - 仅对 SERVICE_PACKAGE 订单生成“未绑定卡（Card）+ 权益（ownerId=cardId）+ bind_token”
+    # - Card.id = Order.id（v1 一单一张卡）
+    if o.order_type == OrderType.SERVICE_PACKAGE.value:
+        card_id = o.id
+
+        # 1) 确保 UNBOUND Card 存在
+        card = (await session.scalars(select(Card).where(Card.id == card_id).limit(1))).first()
+        if card is None:
+            session.add(Card(id=card_id, status=CardStatus.UNBOUND.value, owner_user_id=None))
+        else:
+            # 若已绑定，则不再生成/刷新 token（避免越权覆盖绑定结果）
+            if str(card.status) == CardStatus.BOUND.value:
+                await session.commit()
+                return resolve_fulfillment_flow(order_type=OrderType(o.order_type))
+
+        # 2) 生成权益：ownerId 临时写 cardId（并写入兼容字段 userId/currentUserId）
+        # - 幂等：生成逻辑内部对同一 orderId 做“已生成”检查
+        await generate_entitlements_after_payment_succeeded(
+            session=session,
+            order_id=o.id,
+            qr_sign_secret=settings.entitlement_qr_sign_secret,
+            owner_id_override=card_id,
+        )
+
+        # 3) 生成 bind_token（24h，回调幂等：已有未过期且未使用 token 则复用）
+        now2 = datetime.now(tz=UTC)
+        existing = (
+            await session.scalars(
+                select(BindToken)
+                .where(
+                    BindToken.card_id == card_id,
+                    BindToken.used_at.is_(None),
+                    BindToken.expires_at > now2.replace(tzinfo=None),
+                )
+                .limit(1)
+            )
+        ).first()
+
+        if existing is None:
+            # 滚动策略：生成新 token 时作废旧 token（仅 UNBOUND）
+            await session.execute(
+                update(BindToken)
+                .where(BindToken.card_id == card_id, BindToken.used_at.is_(None))
+                .values(used_at=now2.replace(tzinfo=None))
+            )
+
+            from uuid import uuid4  # noqa: WPS433
+            from datetime import timedelta  # noqa: WPS433
+
+            token = uuid4().hex  # 32 chars
+            expires_at = (now2 + timedelta(seconds=int(settings.bind_token_expire_seconds))).replace(tzinfo=None)
+            session.add(BindToken(token=token, card_id=card_id, expires_at=expires_at, used_at=None))
 
     # v2：物流商品库存确认扣减（占用 -> 扣减），并进入待发货
     if o.order_type == OrderType.PRODUCT.value and o.fulfillment_type == ProductFulfillmentType.PHYSICAL_GOODS.value:

@@ -75,9 +75,12 @@ def test_export_requires_date_from_to_and_audited_and_csv_attachment():
     assert r.status_code == 200
     dealer_id = r.json()["data"]["dealerUser"]["dealerId"]
 
-    # seed 一条订单（服务包订单），created_at 落在 dateFrom/dateTo 内
+    # seed 一条订单（服务包订单），created_at 落在 dateFrom/dateTo（北京时间自然日）内
     order_id = str(uuid4())
-    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    # 固定 UTC 时间，避免“当天”在不同时区/不同执行时间下导致 dateFrom/dateTo 漂移
+    # UTC 2026-01-06 23:00:00 == 北京 2026-01-07 07:00:00
+    now = datetime(2026, 1, 6, 23, 0, 0, tzinfo=UTC).replace(tzinfo=None)
+    beijing_day = "2026-01-07"
 
     async def _seed() -> None:
         session_factory = get_session_factory()
@@ -126,7 +129,7 @@ def test_export_requires_date_from_to_and_audited_and_csv_attachment():
     r1 = client.get(
         "/api/v1/dealer/orders/export",
         headers={"Authorization": f"Bearer {admin_token}"},
-        params={"dealerId": dealer_id, "dateFrom": now.date().isoformat(), "dateTo": now.date().isoformat()},
+        params={"dealerId": dealer_id, "dateFrom": beijing_day, "dateTo": beijing_day},
     )
     assert r1.status_code == 200
     assert "attachment" in (r1.headers.get("Content-Disposition") or "")
@@ -221,5 +224,138 @@ def test_export_over_max_rows_rejected_400():
     assert r1.status_code == 400
     assert r1.json()["success"] is False
     assert r1.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+
+def test_export_date_filter_is_beijing_day_boundary():
+    """证明：导出 dateFrom/dateTo 按北京时间自然日边界解释，而不是 UTC 00:00~23:59:59。"""
+
+    asyncio.run(_reset_db_and_redis())
+
+    admin_id = "00000000-0000-0000-0000-00000000a001"
+    admin_token, _jti = create_admin_token(admin_id=admin_id)
+    client = TestClient(app)
+
+    async def _seed_admin_phone_bound() -> None:
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            session.add(
+                Admin(
+                    id=admin_id,
+                    username="it_admin_export_3",
+                    password_hash=hash_password(password="Abcdef!2345"),
+                    status="ACTIVE",
+                    phone="13800138000",
+                )
+            )
+            await session.commit()
+
+    asyncio.run(_seed_admin_phone_bound())
+
+    r = client.post(
+        "/api/v1/admin/dealer-users",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"username": "it_dealer_user_export_3", "dealerName": "IT Dealer Export 3"},
+    )
+    assert r.status_code == 200
+    dealer_id = r.json()["data"]["dealerUser"]["dealerId"]
+
+    # 北京时间 2026-01-07 00:00:00 == UTC 2026-01-06 16:00:00
+    order_before = str(uuid4())
+    order_at = str(uuid4())
+    order_inside = str(uuid4())
+
+    async def _seed_three() -> None:
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            session.add_all(
+                [
+                    Order(
+                        id=order_before,
+                        user_id=str(uuid4()),
+                        order_type="SERVICE_PACKAGE",
+                        total_amount=1.0,
+                        payment_method="WECHAT",
+                        payment_status="PAID",
+                        dealer_id=dealer_id,
+                        dealer_link_id=None,
+                        fulfillment_type=None,
+                        fulfillment_status=None,
+                        goods_amount=0.0,
+                        shipping_amount=0.0,
+                        shipping_address_json=None,
+                        reservation_expires_at=None,
+                        shipping_carrier=None,
+                        shipping_tracking_no=None,
+                        shipped_at=None,
+                        delivered_at=None,
+                        received_at=None,
+                        created_at=datetime(2026, 1, 6, 15, 59, 59, tzinfo=UTC).replace(tzinfo=None),
+                        paid_at=datetime(2026, 1, 6, 15, 59, 59, tzinfo=UTC).replace(tzinfo=None),
+                        confirmed_at=None,
+                    ),
+                    Order(
+                        id=order_at,
+                        user_id=str(uuid4()),
+                        order_type="SERVICE_PACKAGE",
+                        total_amount=1.0,
+                        payment_method="WECHAT",
+                        payment_status="PAID",
+                        dealer_id=dealer_id,
+                        dealer_link_id=None,
+                        fulfillment_type=None,
+                        fulfillment_status=None,
+                        goods_amount=0.0,
+                        shipping_amount=0.0,
+                        shipping_address_json=None,
+                        reservation_expires_at=None,
+                        shipping_carrier=None,
+                        shipping_tracking_no=None,
+                        shipped_at=None,
+                        delivered_at=None,
+                        received_at=None,
+                        created_at=datetime(2026, 1, 6, 16, 0, 0, tzinfo=UTC).replace(tzinfo=None),
+                        paid_at=datetime(2026, 1, 6, 16, 0, 0, tzinfo=UTC).replace(tzinfo=None),
+                        confirmed_at=None,
+                    ),
+                    Order(
+                        id=order_inside,
+                        user_id=str(uuid4()),
+                        order_type="SERVICE_PACKAGE",
+                        total_amount=1.0,
+                        payment_method="WECHAT",
+                        payment_status="PAID",
+                        dealer_id=dealer_id,
+                        dealer_link_id=None,
+                        fulfillment_type=None,
+                        fulfillment_status=None,
+                        goods_amount=0.0,
+                        shipping_amount=0.0,
+                        shipping_address_json=None,
+                        reservation_expires_at=None,
+                        shipping_carrier=None,
+                        shipping_tracking_no=None,
+                        shipped_at=None,
+                        delivered_at=None,
+                        received_at=None,
+                        created_at=datetime(2026, 1, 6, 23, 0, 0, tzinfo=UTC).replace(tzinfo=None),
+                        paid_at=datetime(2026, 1, 6, 23, 0, 0, tzinfo=UTC).replace(tzinfo=None),
+                        confirmed_at=None,
+                    ),
+                ]
+            )
+            await session.commit()
+
+    asyncio.run(_seed_three())
+
+    r_csv = client.get(
+        "/api/v1/dealer/orders/export",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        params={"dealerId": dealer_id, "dateFrom": "2026-01-07", "dateTo": "2026-01-07"},
+    )
+    assert r_csv.status_code == 200
+    body = r_csv.content.decode("utf-8")
+    assert order_before not in body
+    assert order_at in body
+    assert order_inside in body
 
 

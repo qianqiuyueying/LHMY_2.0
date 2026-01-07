@@ -20,8 +20,8 @@ async function loadSecurity() {
     const data = await apiRequest<{ twoFaEnabled: boolean; phoneMasked?: string | null }>('/admin/auth/security')
     twoFaEnabled.value = !!data?.twoFaEnabled
     phoneMasked.value = (data?.phoneMasked ? String(data.phoneMasked) : null) || null
-  } catch (e: any) {
-    // 不阻断页面：兜底为“未开启”
+  } catch {
+    // 不阻断页面：兜底为"未开启"
     twoFaEnabled.value = false
     phoneMasked.value = null
   } finally {

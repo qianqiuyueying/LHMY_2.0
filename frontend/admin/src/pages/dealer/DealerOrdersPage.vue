@@ -7,6 +7,7 @@ import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import { useRouter } from 'vue-router'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type OrderItem = {
   id: string
@@ -219,8 +220,8 @@ async function exportCsv() {
           </template>
         </el-table-column>
         <el-table-column prop="totalAmount" label="金额" width="120" />
-        <el-table-column prop="createdAt" label="创建时间" width="200" />
-        <el-table-column prop="paidAt" label="支付时间" width="200" />
+        <el-table-column prop="createdAt" label="创建时间" width="200" :formatter="fmtBeijingDateTime" />
+        <el-table-column prop="paidAt" label="支付时间" width="200" :formatter="fmtBeijingDateTime" />
       </el-table>
 
       <div style="margin-top: 12px; display: flex; justify-content: flex-end">

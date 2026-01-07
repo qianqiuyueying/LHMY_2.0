@@ -1,0 +1,10 @@
+# Cursor ignore rules (workspace-level)
+#
+# Goal:
+# - Keep real secrets (.env) ignored
+# - Allow editing the template (.env.example) inside Cursor tools
+
+.env
+!.env.example
+
+

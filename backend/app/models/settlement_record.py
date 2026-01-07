@@ -15,6 +15,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.enums import SettlementStatus
+from app.utils.datetime_utc import utcnow
 
 
 class SettlementRecord(Base):
@@ -44,5 +45,5 @@ class SettlementRecord(Base):
     payout_marked_by: Mapped[str | None] = mapped_column(String(36), nullable=True, comment="标记打款的管理员ID")
     payout_marked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="标记打款时间")
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, comment="创建时间")
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="结算完成时间")

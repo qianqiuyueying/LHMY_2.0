@@ -8,6 +8,7 @@ import { handleApiError } from '../../lib/error-handling'
 import PageHeaderBar from '../../components/PageHeaderBar.vue'
 import PageEmptyState from '../../components/PageEmptyState.vue'
 import PageErrorState from '../../components/PageErrorState.vue'
+import { fmtBeijingDateTime } from '../../lib/time'
 
 type ServiceLine = { serviceType: string; totalCount: number }
 
@@ -236,7 +237,7 @@ onMounted(async () => {
         <el-table-column prop="regionLevel" label="区域级别" width="120" />
         <el-table-column prop="tier" label="等级" width="140" />
         <el-table-column prop="serviceCount" label="服务项数" width="100" />
-        <el-table-column prop="updatedAt" label="更新时间" width="200" />
+        <el-table-column prop="updatedAt" label="更新时间" width="200" :formatter="fmtBeijingDateTime" />
         <el-table-column label="操作" width="140">
           <template #default="scope">
             <el-button type="primary" size="small" @click="openEdit(scope.row)">编辑</el-button>

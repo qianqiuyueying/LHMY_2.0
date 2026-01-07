@@ -69,7 +69,7 @@
                     <n-tag v-if="channelNameById[x.channelId]" size="small" type="success">
                       {{ channelNameById[x.channelId] }}
                     </n-tag>
-                    <span class="muted">{{ x.publishedAt || '' }}</span>
+                    <span class="muted">{{ x.publishedAt ? formatLocalDateTime(x.publishedAt) : '' }}</span>
                   </n-space>
                 </div>
               </n-space>
@@ -109,6 +109,7 @@ import {
 } from 'naive-ui'
 
 import { apiGet } from '../lib/api'
+import { formatLocalDateTime } from '../lib/time'
 import type { CmsChannel, CmsContentListItem } from '../types/cms'
 import EmptyGeoIcon from '../components/EmptyGeoIcon.vue'
 import PageHeader from '../components/PageHeader.vue'

@@ -15,16 +15,19 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from pydantic import BaseModel
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import aliased
 
 from app.models.audit_log import AuditLog
-from app.models.enums import OrderType
+from app.models.bind_token import BindToken
+from app.models.card import Card
+from app.models.enums import CardStatus, OrderType, PaymentStatus
 from app.models.enums import AuditAction, AuditActorType
 from app.models.dealer_settlement_account import DealerSettlementAccount
 from app.models.order import Order
@@ -39,8 +42,33 @@ from app.utils.redis_client import get_redis
 from app.utils.response import ok
 from uuid import uuid4
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
+from app.utils.datetime_iso import iso as _iso
+from app.utils.settings import settings
 
 router = APIRouter(tags=["dealer"])
+
+_TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def _parse_beijing_day(raw: str, *, field_name: str) -> date:
+    """Parse YYYY-MM-DD from admin date picker. Interpreted as Beijing (UTC+8) natural day."""
+    try:
+        if len(raw) != 10:
+            raise ValueError("expected YYYY-MM-DD")
+        return date.fromisoformat(raw)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 格式不合法"}) from exc
+
+
+def _beijing_day_range_to_utc_naive(d: date) -> tuple[datetime, datetime]:
+    """Convert Beijing natural day to [start, endExclusive) in naive UTC datetimes (DB stores UTC naive)."""
+    start_bj = datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    next_day = d + timedelta(days=1)
+    end_bj_exclusive = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    return (
+        start_bj.astimezone(timezone.utc).replace(tzinfo=None),
+        end_bj_exclusive.astimezone(timezone.utc).replace(tzinfo=None),
+    )
 
 
 async def _require_admin_context(authorization: str | None) -> dict:
@@ -182,21 +210,13 @@ async def list_dealer_orders(
         stmt = stmt.where(u.phone.like(f"%{phone.strip()}%"))
 
     if dateFrom:
-        try:
-            df = datetime.strptime(dateFrom, "%Y-%m-%d")
-            stmt = stmt.where(Order.created_at >= df)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(
-                status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dateFrom 格式不合法"}
-            ) from exc
+        d_from = _parse_beijing_day(str(dateFrom), field_name="dateFrom")
+        start_utc, _end_exclusive = _beijing_day_range_to_utc_naive(d_from)
+        stmt = stmt.where(Order.created_at >= start_utc)
     if dateTo:
-        try:
-            dt = datetime.strptime(dateTo, "%Y-%m-%d")
-            stmt = stmt.where(Order.created_at <= dt)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(
-                status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dateTo 格式不合法"}
-            ) from exc
+        d_to = _parse_beijing_day(str(dateTo), field_name="dateTo")
+        _start_utc, end_exclusive = _beijing_day_range_to_utc_naive(d_to)
+        stmt = stmt.where(Order.created_at < end_exclusive)
 
     stmt = stmt.order_by(Order.created_at.desc())
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -252,8 +272,8 @@ async def list_dealer_orders(
                 "sellableCardId": (sellable.id if sellable is not None else None),
                 "sellableCardName": (sellable.name if sellable is not None else None),
                 "regionLevel": (sellable.region_level if sellable is not None else None),
-                "createdAt": o.created_at.astimezone().isoformat(),
-                "paidAt": o.paid_at.astimezone().isoformat() if o.paid_at else None,
+                "createdAt": _iso(o.created_at),
+                "paidAt": _iso(o.paid_at),
             }
         )
 
@@ -293,16 +313,10 @@ async def export_dealer_orders_csv(
     if not (dateTo and str(dateTo).strip()):
         raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dateTo 必填（YYYY-MM-DD）"})
 
-    try:
-        df = datetime.strptime(str(dateFrom), "%Y-%m-%d")
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dateFrom 格式不合法"}) from exc
-    try:
-        # 导出按“含当日”口径：<= dateTo 23:59:59
-        dt0 = datetime.strptime(str(dateTo), "%Y-%m-%d")
-        dt = dt0.replace(hour=23, minute=59, second=59)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dateTo 格式不合法"}) from exc
+    d_from = _parse_beijing_day(str(dateFrom), field_name="dateFrom")
+    start_utc, _end_exclusive = _beijing_day_range_to_utc_naive(d_from)
+    d_to = _parse_beijing_day(str(dateTo), field_name="dateTo")
+    _start_utc, end_exclusive = _beijing_day_range_to_utc_naive(d_to)
 
     # 注意：aliased(User) 必须“只创建一次并复用”，否则会生成 users_1/users_2/users_3 等别名，
     # 导致 join/on clause 引用错别名（MySQL 1054 Unknown column in 'on clause'）。
@@ -311,8 +325,8 @@ async def export_dealer_orders_csv(
     # v1：仅返回健行天下订单
     stmt = stmt.where(Order.order_type == OrderType.SERVICE_PACKAGE.value)
     stmt = stmt.where(Order.dealer_id == dealer_id)
-    stmt = stmt.where(Order.created_at >= df)
-    stmt = stmt.where(Order.created_at <= dt)
+    stmt = stmt.where(Order.created_at >= start_utc)
+    stmt = stmt.where(Order.created_at < end_exclusive)
 
     if dealerLinkId and str(dealerLinkId).strip():
         stmt = stmt.where(getattr(Order, "dealer_link_id") == str(dealerLinkId).strip())
@@ -376,8 +390,8 @@ async def export_dealer_orders_csv(
                     _mask_phone(buyer_phone) or "",
                     o.payment_status or "",
                     float(o.total_amount or 0.0),
-                    o.created_at.astimezone().isoformat(),
-                    o.paid_at.astimezone().isoformat() if o.paid_at else "",
+                    _iso(o.created_at) or "",
+                    _iso(o.paid_at) or "",
                 ]
             )
 
@@ -417,6 +431,82 @@ async def export_dealer_orders_csv(
         "Cache-Control": "no-store",
     }
     return Response(content=content, media_type="text/csv; charset=utf-8", headers=headers)
+
+
+class RegenerateBindTokenResp(BaseModel):
+    orderId: str
+    cardId: str
+    bindToken: str
+    expiresAt: str
+    miniProgramPath: str
+
+
+@router.post("/dealer/orders/{orderId}/bind-token/regenerate")
+async def dealer_regenerate_bind_token(
+    request: Request,
+    orderId: str,
+    authorization: str | None = Header(default=None),
+):
+    """Dealer/Admin：为订单重新生成 bind_token（仅 UNBOUND，滚动作废旧 token）。"""
+
+    ctx = await _require_dealer_or_admin_context(authorization=authorization)
+    dealer_id = str(ctx.get("dealerId") or "").strip()
+    is_admin = str(ctx.get("actorType")) == "ADMIN"
+
+    oid = str(orderId or "").strip()
+    if not oid:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "orderId 不能为空"})
+
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        o = (await session.scalars(select(Order).where(Order.id == oid).limit(1))).first()
+        if o is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在"})
+
+        if not is_admin:
+            if not dealer_id:
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "dealerId 不能为空"})
+            if str(o.dealer_id or "") != dealer_id:
+                raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "无权操作该订单"})
+
+        if str(o.payment_status or "") != PaymentStatus.PAID.value:
+            raise HTTPException(
+                status_code=409, detail={"code": "STATE_CONFLICT", "message": "订单未支付成功，无法生成绑定入口"}
+            )
+
+        card_id = oid  # v1：cardId=orderId
+        c = (await session.scalars(select(Card).where(Card.id == card_id).limit(1))).first()
+        if c is None:
+            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "卡尚未生成，请稍后重试"})
+
+        if str(c.status) != CardStatus.UNBOUND.value:
+            raise HTTPException(status_code=409, detail={"code": "STATE_CONFLICT", "message": "卡已绑定，禁止重新生成绑定入口"})
+
+        # 滚动：作废旧 token（used_at 置值），再生成新 token
+        await session.execute(
+            update(BindToken)
+            .where(BindToken.card_id == card_id, BindToken.used_at.is_(None))
+            .values(used_at=now)
+        )
+
+        token = uuid4().hex
+        expires_at = now + timedelta(seconds=int(settings.bind_token_expire_seconds))
+        session.add(BindToken(token=token, card_id=card_id, expires_at=expires_at, used_at=None))
+        await session.commit()
+
+    mp_path = f"pages/card/bind-by-token?token={token}"
+    return ok(
+        data=RegenerateBindTokenResp(
+            orderId=oid,
+            cardId=card_id,
+            bindToken=token,
+            expiresAt=expires_at.isoformat(),
+            miniProgramPath=mp_path,
+        ).model_dump(),
+        request_id=request.state.request_id,
+    )
 
 
 @router.get("/dealer/settlements")
@@ -461,14 +551,14 @@ async def list_dealer_settlements(
             "orderCount": int(x.order_count),
             "amount": float(x.amount),
             "status": x.status,
-            "createdAt": x.created_at.astimezone().isoformat(),
-            "settledAt": x.settled_at.astimezone().isoformat() if x.settled_at else None,
+            "createdAt": _iso(x.created_at),
+            "settledAt": _iso(x.settled_at),
             "payoutMethod": x.payout_method,
             # 规格（TASK-P0-006）：不返回打款信息明文
             "payoutAccount": _sanitize_payout_account(x.payout_account_json),
             "payoutReferenceLast4": _mask_reference_last4(x.payout_reference),
             "payoutNote": x.payout_note,
-            "payoutMarkedAt": x.payout_marked_at.astimezone().isoformat() if x.payout_marked_at else None,
+            "payoutMarkedAt": _iso(x.payout_marked_at),
         }
         for x in rows
     ]
@@ -504,7 +594,7 @@ async def get_dealer_settlement_account(request: Request, authorization: str | N
             "bankName": row.bank_name or "",
             "bankBranch": row.bank_branch or "",
             "contactPhone": row.contact_phone or "",
-            "updatedAt": row.updated_at.astimezone().isoformat(),
+            "updatedAt": _iso(row.updated_at),
         },
         request_id=request.state.request_id,
     )
@@ -575,7 +665,7 @@ async def put_dealer_settlement_account(
             "bankName": row.bank_name or "",
             "bankBranch": row.bank_branch or "",
             "contactPhone": row.contact_phone or "",
-            "updatedAt": row.updated_at.astimezone().isoformat(),
+            "updatedAt": _iso(row.updated_at),
         },
         request_id=request.state.request_id,
     )

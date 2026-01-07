@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
@@ -20,21 +20,31 @@ from app.models.redemption_record import RedemptionRecord
 from app.services.rbac import ActorContext
 from app.utils.db import get_session_factory
 from app.utils.response import ok
+from app.utils.datetime_iso import iso as _iso
 
 router = APIRouter(tags=["admin-redemptions"])
 
 
-def _parse_dt_utc_naive(raw: str, *, field_name: str) -> datetime:
+_TZ_BEIJING = timezone(timedelta(hours=8))
+
+
+def _parse_beijing_day(raw: str, *, field_name: str) -> date:
     try:
-        if len(raw) == 10:
-            dt = datetime.fromisoformat(raw + "T00:00:00")
-        else:
-            dt = datetime.fromisoformat(raw)
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(UTC).replace(tzinfo=None)
-        return dt
+        if len(raw) != 10:
+            raise ValueError("expected YYYY-MM-DD")
+        return date.fromisoformat(raw)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 格式不合法"}) from exc
+
+
+def _beijing_day_range_to_utc_naive(d: date) -> tuple[datetime, datetime]:
+    start_bj = datetime(d.year, d.month, d.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    next_day = d + timedelta(days=1)
+    end_bj_exclusive = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=_TZ_BEIJING)
+    return (
+        start_bj.astimezone(timezone.utc).replace(tzinfo=None),
+        end_bj_exclusive.astimezone(timezone.utc).replace(tzinfo=None),
+    )
 
 
 def _dto(r: RedemptionRecord) -> dict:
@@ -48,7 +58,7 @@ def _dto(r: RedemptionRecord) -> dict:
         "operatorId": r.operator_id,
         "status": r.status,
         "failureReason": r.failure_reason,
-        "redemptionTime": r.redemption_time.astimezone().isoformat(),
+        "redemptionTime": _iso(r.redemption_time),
     }
 
 
@@ -72,15 +82,15 @@ async def admin_list_redemptions(
 
     stmt = select(RedemptionRecord)
 
+    # Spec (Admin): dateFrom/dateTo are Beijing natural days (YYYY-MM-DD)
     if dateFrom:
-        stmt = stmt.where(RedemptionRecord.redemption_time >= _parse_dt_utc_naive(dateFrom, field_name="dateFrom"))
+        d_from = _parse_beijing_day(str(dateFrom), field_name="dateFrom")
+        start_utc, _end_exclusive = _beijing_day_range_to_utc_naive(d_from)
+        stmt = stmt.where(RedemptionRecord.redemption_time >= start_utc)
     if dateTo:
-        # dateTo 允许 YYYY-MM-DD：按当日 23:59:59 处理
-        if len(dateTo) == 10:
-            dt = _parse_dt_utc_naive(dateTo + "T23:59:59", field_name="dateTo")
-        else:
-            dt = _parse_dt_utc_naive(dateTo, field_name="dateTo")
-        stmt = stmt.where(RedemptionRecord.redemption_time <= dt)
+        d_to = _parse_beijing_day(str(dateTo), field_name="dateTo")
+        _start_utc, end_exclusive = _beijing_day_range_to_utc_naive(d_to)
+        stmt = stmt.where(RedemptionRecord.redemption_time < end_exclusive)
 
     if serviceType and serviceType.strip():
         stmt = stmt.where(RedemptionRecord.service_type == serviceType.strip())

@@ -24,7 +24,7 @@
       />
       <van-cell title="数量">
         <template #value>
-          <van-stepper v-model="quantity" min="1" />
+          <van-stepper v-model="quantity" min="1" max="1" disabled />
         </template>
       </van-cell>
       <template v-if="requiredRegionLevel">
@@ -60,14 +60,7 @@
     </div>
 
     <div class="section">
-      <van-field v-model="phone" label="手机号" placeholder="请输入手机号" type="tel" maxlength="11" />
-      <van-field v-model="smsCode" label="验证码" placeholder="请输入验证码" maxlength="10">
-        <template #button>
-          <van-button size="small" type="primary" :disabled="smsSending || smsCooldown > 0" @click="sendSms">
-            {{ smsCooldown > 0 ? `${smsCooldown}s` : '获取验证码' }}
-          </van-button>
-        </template>
-      </van-field>
+      <van-cell title="提示" value="本页面不登录、不保存购买记录；支付成功后请前往小程序绑定卡。" />
     </div>
 
     <div class="section">
@@ -172,7 +165,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
-import { ApiError, apiGet, apiPost, getToken, newIdempotencyKey, presentErrorMessage, setToken } from '../lib/api'
+import { apiGet, apiPost, newIdempotencyKey, presentErrorMessage } from '../lib/api'
 import { parseDealerLinkId, parseDealerParams } from '../lib/dealer'
 
 const route = useRoute()
@@ -181,8 +174,6 @@ const router = useRouter()
 const productTitle = ref('高端服务卡')
 const quantity = ref(1)
 
-const phone = ref('')
-const smsCode = ref('')
 const agree = ref(false)
 
 const dealerTip = ref('')
@@ -198,10 +189,6 @@ type SellableCard = {
 }
 
 const sellableCard = ref<SellableCard | null>(null)
-
-const smsSending = ref(false)
-const smsCooldown = ref(0)
-let smsCooldownTimer: number | null = null
 
 const submitting = ref(false)
 const agreementLoading = ref(false)
@@ -432,18 +419,6 @@ async function loadServicePackage() {
   }
 }
 
-function startCooldown(seconds: number) {
-  smsCooldown.value = Math.max(0, seconds)
-  if (smsCooldownTimer) window.clearInterval(smsCooldownTimer)
-  smsCooldownTimer = window.setInterval(() => {
-    smsCooldown.value = Math.max(0, smsCooldown.value - 1)
-    if (smsCooldown.value <= 0 && smsCooldownTimer) {
-      window.clearInterval(smsCooldownTimer)
-      smsCooldownTimer = null
-    }
-  }, 1000)
-}
-
 async function openAgreement() {
   agreementLoading.value = true
   try {
@@ -456,44 +431,6 @@ async function openAgreement() {
     showToast(presentErrorMessage(e))
   } finally {
     agreementLoading.value = false
-  }
-}
-
-async function sendSms() {
-  if (!phone.value) {
-    showToast('请输入手机号')
-    return
-  }
-  if (!/^\d{11}$/.test(phone.value)) {
-    showToast('请输入正确的 11 位手机号')
-    return
-  }
-  smsSending.value = true
-  try {
-    const res = await apiPost<{ sent: boolean; expiresInSeconds: number; resendAfterSeconds: number }>(
-      '/auth/request-sms-code',
-      { phone: phone.value, scene: 'H5_BUY' },
-    )
-    if (res.sent) startCooldown(res.resendAfterSeconds || 60)
-    showToast('验证码已发送')
-  } catch (e: any) {
-    showToast(presentErrorMessage(e))
-  } finally {
-    smsSending.value = false
-  }
-}
-
-async function ensureLogin(): Promise<string | null> {
-  const existing = getToken()
-  if (existing) return existing
-  if (!phone.value || !smsCode.value) return null
-  try {
-    const res = await apiPost<{ token: string }>('/auth/login', { channel: 'H5', phone: phone.value, smsCode: smsCode.value })
-    setToken(res.token)
-    return res.token
-  } catch (e: unknown) {
-    showToast(presentErrorMessage(e))
-    return null
   }
 }
 
@@ -533,12 +470,6 @@ async function submit() {
 
   submitting.value = true
   try {
-    const token = await ensureLogin()
-    if (!token) {
-      showToast('请先完成手机号验证')
-      return
-    }
-
     const idem1 = newIdempotencyKey()
     const order = await apiPost<any>(
       '/orders',
@@ -549,7 +480,7 @@ async function submit() {
             itemType: 'SERVICE_PACKAGE',
             // v2.1：itemId 即 sellableCardId（订单明细业务对象ID）
             itemId: resolved.id,
-            quantity: quantity.value,
+            quantity: 1,
             servicePackageTemplateId: templateId,
             regionScope,
             regionLevel,
@@ -558,7 +489,6 @@ async function submit() {
         ],
       },
       {
-        token,
         headers: {
           'Idempotency-Key': idem1,
         },
@@ -570,13 +500,34 @@ async function submit() {
     const payRes = await apiPost<{ orderId: string; paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' }>(
       `/orders/${order.id}/pay`,
       { paymentMethod: 'WECHAT' },
-      { token, headers: { 'Idempotency-Key': idem2 } },
+      { headers: { 'Idempotency-Key': idem2 } },
     )
 
-    // v1：后端返回 mock wechatPayParams；前端先按“已发起支付”落到成功态（便于联调）。
-    // 若支付接口返回 FAILED，则展示失败态。
-    const status = payRes.paymentStatus === 'FAILED' ? 'fail' : 'success'
-    router.replace({ path: '/h5/pay/result', query: { dealerLinkId: dealerLinkId.value, status, orderId: order.id } })
+    if (payRes.paymentStatus === 'FAILED') {
+      router.replace({
+        path: '/h5/pay/result',
+        query: { dealerLinkId: dealerLinkId.value, status: 'fail', reason: '微信支付下单失败', orderId: order.id },
+      })
+      return
+    }
+
+    // 微信 H5（MWEB）：跳转支付页，并指定回跳到支付结果页（结果页将按 orderId 拉取 bind_token）
+    const redirectUrl = `${window.location.origin}/h5/pay/result?dealerLinkId=${encodeURIComponent(
+      dealerLinkId.value,
+    )}&orderId=${encodeURIComponent(order.id)}`
+
+    const rawUrl = (payRes as any).wechatH5Url as string | undefined
+    if (!rawUrl) {
+      router.replace({
+        path: '/h5/pay/result',
+        query: { dealerLinkId: dealerLinkId.value, status: 'fail', reason: '缺少 wechatH5Url', orderId: order.id },
+      })
+      return
+    }
+
+    const u = new URL(rawUrl)
+    u.searchParams.set('redirect_url', redirectUrl)
+    window.location.href = u.toString()
   } catch (e: any) {
     router.replace({ path: '/h5/pay/result', query: { dealerLinkId: dealerLinkId.value, status: 'fail', reason: presentErrorMessage(e) } })
   } finally {
