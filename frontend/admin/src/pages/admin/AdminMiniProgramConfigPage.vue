@@ -796,10 +796,44 @@ function openEditEntry(row: EntryItem) {
 }
 
 const entriesSaving = ref(false)
+
+function _validateEntryDraft(e: EntryItem): string | null {
+  const name = String((e as any)?.name || '').trim() || String((e as any)?.id || '').trim() || '未命名'
+  const jumpType = String((e as any)?.jumpType || '').trim()
+  const targetId = String((e as any)?.targetId || '').trim()
+  if (!targetId) return `「${name}」跳转目标必填`
+
+  if (jumpType === 'WEBVIEW') {
+    // 口径与后端一致：生产仅 https；开发允许 localhost/127.0.0.1/0.0.0.0 回环
+    const url = targetId
+    const ok = /^https:\/\//.test(url) || /^http:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/.test(url)
+    if (!ok) return `「${name}」外链仅允许 https://（开发环境允许 localhost 回环）`
+  }
+
+  if (jumpType === 'MINI_PROGRAM') {
+    // 规格：targetId=appid|path（path 可为空；若不为空必须以 / 开头）
+    const { appId, path } = parseMiniProgramTarget(targetId)
+    if (!String(appId || '').trim()) return `「${name}」其他小程序 appId 不能为空`
+    if (path && !String(path).startsWith('/')) return `「${name}」小程序 path 必须以 / 开头（例如 /pages/index/index）`
+    // 规范化存储格式：确保包含 "|"
+    setMiniProgramTarget(e as any, appId, path)
+  }
+
+  return null
+}
+
 async function saveEntriesDraft(): Promise<boolean> {
   entriesSaving.value = true
   try {
     const beforeCount = entries.value.length
+    // 保存草稿前做一次前端校验，避免把明显非法配置提交到后端（否则后端会返回 400）
+    for (const it of entries.value || []) {
+      const err = _validateEntryDraft(it)
+      if (err) {
+        ElMessage.error(err)
+        return false
+      }
+    }
     await apiRequest('/admin/mini-program/entries', { method: 'PUT', body: { items: entries.value } })
     await loadEntries()
     // 强确认：如果本地有条目，但保存后重新拉取还是空，说明保存未落库/环境不一致
@@ -876,7 +910,13 @@ async function submitEntryDialog() {
   } else if (e.jumpType === 'MINI_PROGRAM') {
     const { appId, path } = parseMiniProgramTarget(e.targetId)
     if (!appId) return ElMessage.error('请输入其他小程序 appId')
+    if (path && !String(path).startsWith('/')) return ElMessage.error('小程序 path 必须以 / 开头（例如 /pages/index/index）')
     setMiniProgramTarget(e, appId, path)
+  } else if (e.jumpType === 'WEBVIEW') {
+    // 前端提前提示：避免后端拒绝导致“保存失败”（后端也会二次校验）
+    const url = e.targetId
+    const ok = /^https:\/\//.test(url) || /^http:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/.test(url)
+    if (!ok) return ElMessage.error('外链仅允许 https://（开发环境允许 localhost 回环）')
   } else {
     if (!e.targetId) return ElMessage.error('跳转目标必填')
   }

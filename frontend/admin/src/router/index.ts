@@ -84,6 +84,13 @@ const routes: RouteRecordRaw[] = [
       {
         path: '/admin/orders',
         name: 'admin-orders',
+        // 避免混用：订单监管按业务线拆分（基建联防/健行天下）
+        redirect: '/admin/orders/ecommerce-product',
+        meta: { role: 'ADMIN' },
+      },
+      {
+        path: '/admin/orders/all',
+        name: 'admin-orders-all',
         component: () => import('../pages/admin/AdminOrdersPage.vue'),
         meta: { role: 'ADMIN' },
       },
@@ -189,9 +196,21 @@ const routes: RouteRecordRaw[] = [
         meta: { role: 'ADMIN' },
       },
       {
-        path: '/admin/ai',
-        name: 'admin-ai',
-        component: () => import('../pages/admin/AdminAiConfigPage.vue'),
+        path: '/admin/ai/providers',
+        name: 'admin-ai-providers',
+        component: () => import('../pages/admin/AdminAiProvidersPage.vue'),
+        meta: { role: 'ADMIN' },
+      },
+      {
+        path: '/admin/ai/strategies',
+        name: 'admin-ai-strategies',
+        component: () => import('../pages/admin/AdminAiStrategiesPage.vue'),
+        meta: { role: 'ADMIN' },
+      },
+      {
+        path: '/admin/ai/bindings',
+        name: 'admin-ai-bindings',
+        component: () => import('../pages/admin/AdminAiBindingsPage.vue'),
         meta: { role: 'ADMIN' },
       },
       {

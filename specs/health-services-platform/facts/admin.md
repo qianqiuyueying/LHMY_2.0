@@ -105,6 +105,16 @@
   - v2 事实：商品履约类型包含 `SERVICE` 与 `PHYSICAL_GOODS`；物流商品在监管页展示库存/占用/运费等字段  
     - 证据：`frontend/admin/src/pages/admin/AdminProductsPage.vue`、`backend/app/api/v1/products.py`
 
+- [x] 订单监管按业务线拆分（避免混用语境）  
+  - 基建联防：`/admin/orders/ecommerce-product`（固定 `orderType=PRODUCT`）  
+  - 健行天下：`/admin/orders/service-package`（固定 `orderType=SERVICE_PACKAGE`）  
+  - 证据：路由 `frontend/admin/src/router/index.ts`、菜单 `frontend/admin/src/lib/nav.ts`
+- [x] 订单监管列表补齐“订单摘要”与“详情抽屉”（面向运营快速识别与跟进）  
+  - 列表摘要字段：`firstItemTitle + itemsCount`  
+  - 详情抽屉：展示订单关键字段 + `order_items` 明细；物流订单在详情中展示（脱敏）收货地区  
+  - 物流动作：支持“发货（录入快递公司/运单号）”与“标记妥投”  
+  - 证据：`frontend/admin/src/pages/admin/AdminOrdersByTypePage.vue`；后端：`backend/app/api/v1/orders.py`（`GET /admin/orders`、`GET /orders/{id}`、`POST /admin/orders/{id}/ship|deliver`）
+
 - [x] Provider 服务型商品预约配置会自动生成 VenueService 关联（用于小程序独立预约）  
   - 证据：`backend/app/api/v1/provider.py`（`POST/PUT /api/v1/provider/products`）、`frontend/admin/src/pages/provider/ProviderProductsPage.vue`
 - [x] 标签库（全局）：Admin 维护 PRODUCT/SERVICE/VENUE 标签（启用/停用/排序），供 Provider 侧选择  
@@ -136,6 +146,21 @@
   - 场所检索：`GET /api/v1/admin/venues?keyword=...&publishStatus=PUBLISHED`  
   - 保存配置：`PUT /api/v1/admin/website/home/recommended-venues`  
   - 证据：`frontend/admin/src/pages/admin/AdminWebsiteHomeRecommendedVenuesPage.vue`、`backend/app/api/v1/admin_venues.py`、`backend/app/api/v1/admin_website_config.py`
+
+#### E3.1) AI 能力平台（v2：Provider/Strategy/绑定/迁移）
+
+- [x] AI Provider（技术配置层）：支持列表/新增/编辑/连接测试（凭证不在响应/审计中返回明文）  
+  - 接口：`GET/POST /api/v1/admin/ai/providers`、`PUT /api/v1/admin/ai/providers/{providerId}`、`POST /api/v1/admin/ai/providers/{providerId}/test-connection`  
+  - 证据：`backend/app/api/v1/admin_ai.py`、`frontend/admin/src/pages/admin/AdminAiProvidersPage.vue`
+- [x] AI Strategy（业务能力层）：支持列表/新增/编辑（不包含模型/凭证/endpoint 等技术字段）  
+  - 接口：`GET/POST /api/v1/admin/ai/strategies`、`PUT /api/v1/admin/ai/strategies/{strategyId}`  
+  - 证据：`backend/app/api/v1/admin_ai.py`、`frontend/admin/src/pages/admin/AdminAiStrategiesPage.vue`
+- [x] Strategy ↔ Provider 绑定：支持切换 Provider（不影响小程序端调用）  
+  - 接口：`POST /api/v1/admin/ai/strategies/{strategyId}/bind-provider`  
+  - 证据：`backend/app/api/v1/admin_ai.py`、`frontend/admin/src/pages/admin/AdminAiBindingsPage.vue`
+- [x] 开发/测试辅助：一键清空 AI Provider/Strategy（避免“重启容器后看到历史残留记录”造成困惑）  
+  - 接口：`POST /api/v1/admin/ai/dev/reset`（生产环境 403）  
+  - 证据：`backend/app/api/v1/admin_ai.py`、`frontend/admin/src/pages/admin/AdminAiBindingsPage.vue`
 
 ### F) 主题策略（事实）
 

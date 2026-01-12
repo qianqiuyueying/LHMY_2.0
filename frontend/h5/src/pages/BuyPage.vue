@@ -64,6 +64,20 @@
     </div>
 
     <div class="section">
+      <van-field
+        v-model="buyerPhone"
+        label="手机号"
+        placeholder="用于订单联系（不用于登录）"
+        type="tel"
+        maxlength="20"
+        clearable
+      />
+      <div style="padding: 0 16px 8px; color: rgba(0,0,0,.6); font-size: 12px">
+        我们仅在后台以脱敏形式展示手机号，用于订单联系与售后跟进。
+      </div>
+    </div>
+
+    <div class="section">
       <van-checkbox v-model="agree">
         我已阅读并同意
         <span class="link" @click.stop="openAgreement">《服务协议》</span>
@@ -165,7 +179,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
-import { apiGet, apiPost, newIdempotencyKey, presentErrorMessage } from '../lib/api'
+import { ApiError, apiGet, apiPost, newIdempotencyKey, presentErrorMessage } from '../lib/api'
 import { parseDealerLinkId, parseDealerParams } from '../lib/dealer'
 
 const route = useRoute()
@@ -175,6 +189,7 @@ const productTitle = ref('高端服务卡')
 const quantity = ref(1)
 
 const agree = ref(false)
+const buyerPhone = ref('')
 
 const dealerTip = ref('')
 const dealerLinkId = ref('')
@@ -445,6 +460,13 @@ async function submit() {
     return
   }
 
+  const rawPhone = String(buyerPhone.value || '').trim()
+  const phoneDigits = rawPhone.replace(/[^\d]/g, '')
+  if (phoneDigits.length !== 11) {
+    showToast('请填写正确的手机号（11位）')
+    return
+  }
+
   const resolved = sellableCard.value
   const templateId = resolved?.servicePackageTemplateId || ''
   let regionScope = ''
@@ -475,6 +497,7 @@ async function submit() {
       '/orders',
       {
         orderType: 'SERVICE_PACKAGE',
+        buyerPhone: phoneDigits,
         items: [
           {
             itemType: 'SERVICE_PACKAGE',
@@ -586,6 +609,116 @@ watch(
   background: rgba(255, 255, 255, 0.92);
   border-top: 1px solid rgba(2, 6, 23, 0.08);
   box-shadow: var(--lh-shadow-float);
+}
+
+/* ===== 服务协议弹层（仿照 H5 其它弹层/卡片风格） ===== */
+.agreement {
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(
+    180deg,
+    rgba(20, 184, 166, 0.06) 0%,
+    rgba(255, 255, 255, 1) 24%,
+    rgba(255, 255, 255, 1) 100%
+  );
+}
+.agreement-header {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--lh-border);
+  /* sticky 让标题栏在长协议滚动时仍可见，体验和其它弹层一致 */
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: saturate(180%) blur(8px);
+  z-index: 1;
+}
+.agreement-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--lh-slate-900);
+}
+.agreement-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 16px 22px;
+}
+.agreement-empty {
+  padding: 24px 0;
+  font-size: 13px;
+  color: var(--lh-slate-500);
+  text-align: center;
+}
+/* 协议内容（HTML）排版：保证“有设计”的可读性，但不改变信息结构 */
+.agreement-html {
+  color: var(--lh-slate-700);
+  font-size: 13px;
+  line-height: 1.85;
+  word-break: break-word;
+}
+.agreement-html :deep(h1),
+.agreement-html :deep(h2),
+.agreement-html :deep(h3) {
+  margin: 14px 0 10px;
+  color: var(--lh-slate-900);
+  font-weight: 800;
+  line-height: 1.4;
+}
+.agreement-html :deep(h1) {
+  font-size: 16px;
+}
+.agreement-html :deep(h2) {
+  font-size: 15px;
+}
+.agreement-html :deep(h3) {
+  font-size: 14px;
+}
+.agreement-html :deep(p) {
+  margin: 0 0 12px;
+}
+.agreement-html :deep(ul),
+.agreement-html :deep(ol) {
+  margin: 0 0 12px;
+  padding-left: 18px;
+}
+.agreement-html :deep(li) {
+  margin: 4px 0;
+}
+.agreement-html :deep(strong),
+.agreement-html :deep(b) {
+  color: var(--lh-slate-900);
+}
+.agreement-html :deep(a) {
+  color: var(--lh-teal-700);
+  text-decoration: underline;
+}
+.agreement-html :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+.agreement-html :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0 14px;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--lh-border-soft);
+}
+.agreement-html :deep(th),
+.agreement-html :deep(td) {
+  border: 1px solid var(--lh-border-soft);
+  padding: 10px 10px;
+  font-size: 12px;
+  vertical-align: top;
+}
+.agreement-html :deep(th) {
+  background: rgba(2, 6, 23, 0.03);
+  color: var(--lh-slate-900);
+  font-weight: 700;
 }
 .region-popup {
   height: 80vh;

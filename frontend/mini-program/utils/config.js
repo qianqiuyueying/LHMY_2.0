@@ -8,7 +8,7 @@ function getApiBaseUrl() {
   // v1 约束：release 环境不允许默认指向 localhost/127.0.0.1（避免“上线后不可用”）
   // - develop/trial：允许本地默认
   // - release：要求显式配置（storage 覆写）
-  const fallbackLocal = 'http://192.168.0.101:8000'
+  const fallbackLocal = 'http://192.168.2.1:8000'
   let envVersion = ''
   try {
     // 避免可选链语法在部分基础库/构建配置下导致模块解析失败

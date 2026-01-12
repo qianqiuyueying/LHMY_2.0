@@ -46,3 +46,5 @@ from app.models.service_category import ServiceCategory  # noqa: F401
 from app.models.sellable_card import SellableCard  # noqa: F401
 from app.models.card import Card  # noqa: F401
 from app.models.bind_token import BindToken  # noqa: F401
+from app.models.ai_provider import AiProvider  # noqa: F401
+from app.models.ai_strategy import AiStrategy  # noqa: F401

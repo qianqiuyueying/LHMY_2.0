@@ -336,3 +336,15 @@ class LegalAgreementStatus(StrEnum):
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
     OFFLINE = "OFFLINE"
+
+
+class AiProviderType(StrEnum):
+    """AI Provider 类型（v2）。
+
+    规格来源：specs/health-services-platform/ai-gateway-v2.md
+    """
+
+    DASHSCOPE_APPLICATION = "dashscope_application"
+    DASHSCOPE_MODEL = "dashscope_model"
+    OPENAPI_COMPATIBLE = "openapi_compatible"
+    CUSTOM_PROVIDER = "custom_provider"

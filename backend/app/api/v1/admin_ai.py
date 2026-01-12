@@ -1,11 +1,7 @@
-"""Admin AI 配置中心（阶段11，v1 最小可执行）。
+"""Admin AI 能力平台（v2：Provider/Strategy/绑定）。
 
-规格来源（已确认）：
-- specs/health-services-platform/design.md -> AI 对话能力（配置项/审计元数据）
-- specs/health-services-platform/tasks.md -> 阶段11「规格补充（待确认）」-> 用户已确认
-
-存储承载：
-- SystemConfig.key = "AI_CONFIG"
+规格来源（单一真相来源）：
+- specs/health-services-platform/ai-gateway-v2.md
 """
 
 from __future__ import annotations
@@ -18,28 +14,30 @@ from uuid import uuid4
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
+from app.models.ai_provider import AiProvider
+from app.models.ai_strategy import AiStrategy
 from app.models.audit_log import AuditLog
-from app.models.enums import AuditAction, AuditActorType, CommonEnabledStatus
-from app.models.system_config import SystemConfig
+from app.models.enums import AiProviderType, AuditAction, AuditActorType, CommonEnabledStatus
+from app.services.ai.factory import create_adapter
+from app.services.ai.types import AiCallContext, AiProviderSnapshot, AiStrategySnapshot
 from app.services.idempotency import IdemActorType, IdempotencyCachedResult, IdempotencyService
 from app.utils.redis_client import get_redis
 from app.utils.db import get_session_factory
 from app.utils.response import fail, ok
-from app.api.v1.deps import require_admin, require_admin_phone_bound
+from app.api.v1.deps import require_admin
 from app.services.rbac import ActorContext
-from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 from app.utils.datetime_iso import iso as _iso
+from app.utils.settings import settings
 
 router = APIRouter(tags=["admin-ai"])
-
-_KEY_AI_CONFIG = "AI_CONFIG"
-_OPERATION_PUT_AI_CONFIG = "ADMIN_PUT_AI_CONFIG"
-
-
-def _now_version() -> str:
-    return str(int(time.time()))
+_OPERATION_POST_AI_PROVIDER = "ADMIN_POST_AI_PROVIDER"
+_OPERATION_PUT_AI_PROVIDER = "ADMIN_PUT_AI_PROVIDER"
+_OPERATION_TEST_AI_PROVIDER = "ADMIN_TEST_AI_PROVIDER"
+_OPERATION_POST_AI_STRATEGY = "ADMIN_POST_AI_STRATEGY"
+_OPERATION_PUT_AI_STRATEGY = "ADMIN_PUT_AI_STRATEGY"
+_OPERATION_BIND_AI_STRATEGY_PROVIDER = "ADMIN_BIND_AI_STRATEGY_PROVIDER"
 
 
 _TZ_BEIJING = timezone(timedelta(hours=8))
@@ -75,6 +73,60 @@ def _mask_api_key(api_key: str | None) -> str | None:
     return f"{s[:3]}****{s[-4:]}"
 
 
+def _safe_provider_audit_view(row: AiProvider) -> dict:
+    """用于审计 before/after：禁止包含 apiKey 明文。"""
+    creds = dict(row.credentials_json or {})
+    api_key_masked = _mask_api_key(str(creds.get("api_key") or creds.get("apiKey") or ""))
+    # 永远不返回明文
+    safe_creds = {k: ("****" if k in ("api_key", "apiKey") else v) for k, v in creds.items() if k != "api_key"}
+    # 上面 safe_creds 仍可能包含 app_id（非敏感）；api_key 只用 masked 表达
+    return {
+        "id": str(row.id),
+        "name": str(row.name),
+        "providerType": str(row.provider_type),
+        "endpoint": (str(row.endpoint) if row.endpoint else None),
+        "extra": dict(row.extra_json or {}),
+        "status": str(row.status),
+        "apiKeyMasked": api_key_masked,
+        "credentialsKeys": sorted(list(creds.keys())),
+    }
+
+
+def _safe_strategy_audit_view(row: AiStrategy) -> dict:
+    return {
+        "id": str(row.id),
+        "scene": str(row.scene),
+        "displayName": str(row.display_name or ""),
+        "providerId": (str(row.provider_id) if row.provider_id else None),
+        "promptTemplate": str(row.prompt_template or ""),
+        "generationConfig": dict(row.generation_config_json or {}),
+        "constraints": dict(row.constraints_json or {}),
+        "status": str(row.status),
+    }
+
+
+def _as_provider_snapshot(row: AiProvider) -> AiProviderSnapshot:
+    return AiProviderSnapshot(
+        id=str(row.id),
+        name=str(row.name),
+        provider_type=str(row.provider_type),
+        credentials=dict(row.credentials_json or {}),
+        endpoint=(str(row.endpoint) if row.endpoint else None),
+        extra=dict(row.extra_json or {}),
+    )
+
+
+def _as_strategy_snapshot(scene: str, *, prompt_template: str, generation_config: dict, constraints: dict) -> AiStrategySnapshot:
+    return AiStrategySnapshot(
+        scene=str(scene),
+        display_name="",
+        provider_id=None,
+        prompt_template=str(prompt_template or ""),
+        generation_config=dict(generation_config or {}),
+        constraints=dict(constraints or {}),
+    )
+
+
 def _require_idempotency_key(idempotency_key: str | None) -> str:
     if not idempotency_key or not str(idempotency_key).strip():
         raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "缺少 Idempotency-Key"})
@@ -107,145 +159,89 @@ async def _idempotency_replay_if_exists(
     return JSONResponse(status_code=int(cached.status_code), content=payload)
 
 
-def _ai_config_public_view(value_json: dict) -> dict:
-    v = _normalize_value(value_json)
-    return {
-        "enabled": bool(v.get("enabled", False)),
-        "provider": "OPENAI_COMPAT",
-        "baseUrl": str(v.get("baseUrl", "") or ""),
-        "model": str(v.get("model", "") or ""),
-        "systemPrompt": (str(v.get("systemPrompt")) if v.get("systemPrompt") is not None else None),
-        "temperature": (float(v["temperature"]) if v.get("temperature") is not None else None),
-        "maxTokens": (int(v["maxTokens"]) if v.get("maxTokens") is not None else None),
-        "timeoutMs": (int(v["timeoutMs"]) if v.get("timeoutMs") is not None else None),
-        "retries": (int(v["retries"]) if v.get("retries") is not None else None),
-        "rateLimitPerMinute": (int(v["rateLimitPerMinute"]) if v.get("rateLimitPerMinute") is not None else None),
-        "version": str(v.get("version", "")),
-        "apiKeyMasked": _mask_api_key(str(v.get("apiKey", "") or "")),
-    }
+# -----------------------------
+# Admin：AI Provider/Strategy（v2）
+# -----------------------------
 
 
-def _ai_config_audit_view(value_json: dict) -> dict:
-    """用于审计 before/after：禁止包含 apiKey 明文。"""
-    v = _normalize_value(value_json)
-    return {
-        "enabled": bool(v.get("enabled", False)),
-        "provider": "OPENAI_COMPAT",
-        "baseUrl": str(v.get("baseUrl", "") or ""),
-        "model": str(v.get("model", "") or ""),
-        "systemPrompt": str(v.get("systemPrompt", "") or ""),
-        "temperature": float(v.get("temperature", 0.7)),
-        "maxTokens": int(v.get("maxTokens", 1024)),
-        "timeoutMs": int(v.get("timeoutMs", 15000)),
-        "retries": int(v.get("retries", 1)),
-        "rateLimitPerMinute": int(v.get("rateLimitPerMinute", 30)),
-        "version": str(v.get("version", "")),
-    }
-
-
-
-async def _get_or_create_ai_config(session) -> SystemConfig:
-    cfg = (await session.scalars(select(SystemConfig).where(SystemConfig.key == _KEY_AI_CONFIG).limit(1))).first()
-    if cfg is not None:
-        return cfg
-
-    default_value = {
-        "enabled": False,
-        "provider": "OPENAI_COMPAT",
-        "baseUrl": "",
-        "apiKey": "",
-        "model": "",
-        "systemPrompt": "",
-        "temperature": 0.7,
-        "maxTokens": 1024,
-        "timeoutMs": 15000,
-        "retries": 1,
-        "rateLimitPerMinute": 30,
-        "version": _now_version(),
-    }
-    cfg = SystemConfig(
-        id=str(uuid4()),
-        key=_KEY_AI_CONFIG,
-        value_json=default_value,
-        description="AI config for mini-program chat gateway",
-        status=CommonEnabledStatus.ENABLED.value,
-    )
-    session.add(cfg)
-    await session.commit()
-    await session.refresh(cfg)
-    return cfg
-
-
-def _parse_dt(raw: str, *, field_name: str) -> datetime:
-    try:
-        if len(raw) == 10:
-            return datetime.fromisoformat(raw + "T00:00:00")
-        return datetime.fromisoformat(raw)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field_name} 时间格式不合法"}
-        ) from exc
-
-
-def _normalize_value(value: dict) -> dict:
-    v = dict(value or {})
-    # 兜底：保证存在必要字段
-    v.setdefault("enabled", False)
-    v.setdefault("provider", "OPENAI_COMPAT")
-    v.setdefault("baseUrl", "")
-    v.setdefault("apiKey", "")
-    v.setdefault("model", "")
-    v.setdefault("systemPrompt", "")
-    v.setdefault("temperature", 0.7)
-    v.setdefault("maxTokens", 1024)
-    v.setdefault("timeoutMs", 15000)
-    v.setdefault("retries", 1)
-    v.setdefault("rateLimitPerMinute", 30)
-    v.setdefault("version", _now_version())
-    return v
-
-
-class AdminAiConfigResp(BaseModel):
-    enabled: bool
-    provider: Literal["OPENAI_COMPAT"]
-    baseUrl: str
-    model: str
-    systemPrompt: str | None = None
-    temperature: float | None = None
-    maxTokens: int | None = None
-    timeoutMs: int | None = None
-    retries: int | None = None
-    rateLimitPerMinute: int | None = None
-    version: str
+class AdminAiProviderResp(BaseModel):
+    id: str
+    name: str
+    providerType: str
+    endpoint: str | None = None
+    extra: dict
+    status: str
     apiKeyMasked: str | None = None
+    # credentials 的 key 列表（不返回明文）
+    credentialsKeys: list[str]
 
 
-@router.get("/admin/ai/config")
-async def admin_get_ai_config(
+class AdminAiStrategyResp(BaseModel):
+    id: str
+    scene: str
+    displayName: str
+    providerId: str | None = None
+    promptTemplate: str
+    generationConfig: dict
+    constraints: dict
+    status: str
+
+
+@router.get("/admin/ai/providers")
+async def admin_list_ai_providers(
     request: Request,
     _admin: ActorContext = Depends(require_admin),
 ):
     _ = _admin
-
     session_factory = get_session_factory()
     async with session_factory() as session:
-        cfg = await _get_or_create_ai_config(session)
-        data = AdminAiConfigResp(**_ai_config_public_view(cfg.value_json)).model_dump()
+        rows = (await session.scalars(select(AiProvider).order_by(AiProvider.created_at.desc()))).all()
 
-    return ok(data=data, request_id=request.state.request_id)
+    items: list[dict] = []
+    for r in rows:
+        items.append(AdminAiProviderResp(**_safe_provider_audit_view(r)).model_dump())
+    return ok(data={"items": items}, request_id=request.state.request_id)
 
-@router.put("/admin/ai/config")
-async def admin_put_ai_config(
+
+@router.get("/admin/ai/strategies")
+async def admin_list_ai_strategies(
+    request: Request,
+    _admin: ActorContext = Depends(require_admin),
+):
+    _ = _admin
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        rows = (await session.scalars(select(AiStrategy).order_by(AiStrategy.created_at.desc()))).all()
+
+    items: list[dict] = []
+    for r in rows:
+        items.append(
+            AdminAiStrategyResp(
+                id=str(r.id),
+                scene=str(r.scene),
+                displayName=str(r.display_name or ""),
+                providerId=(str(r.provider_id) if r.provider_id else None),
+                promptTemplate=str(r.prompt_template or ""),
+                generationConfig=dict(r.generation_config_json or {}),
+                constraints=dict(r.constraints_json or {}),
+                status=str(r.status),
+            ).model_dump()
+        )
+    return ok(data={"items": items}, request_id=request.state.request_id)
+
+
+@router.post("/admin/ai/providers")
+async def admin_create_ai_provider(
     request: Request,
     body: dict[str, Any] = Body(default_factory=dict),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    _admin: ActorContext = Depends(require_admin_phone_bound),
+    _admin: ActorContext = Depends(require_admin),
 ):
     admin_id = str(_admin.sub)
     idem_key = _require_idempotency_key(idempotency_key)
     replay = await _idempotency_replay_if_exists(
         request=request,
-        operation=_OPERATION_PUT_AI_CONFIG,
+        operation=_OPERATION_POST_AI_PROVIDER,
         actor_type="ADMIN",
         actor_id=admin_id,
         idempotency_key=idem_key,
@@ -256,169 +252,613 @@ async def admin_put_ai_config(
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "body 必须是 JSON 对象"})
 
+    name = body.get("name")
+    provider_type = body.get("providerType") or body.get("provider_type")
+    endpoint = body.get("endpoint")
+    extra = body.get("extra")
+    credentials = body.get("credentials")
+
+    if not isinstance(name, str) or not name.strip():
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "name 必须是 string"})
+    name = name.strip()
+    if not isinstance(provider_type, str) or provider_type.strip() not in {x.value for x in AiProviderType}:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "providerType 不合法"})
+
+    if endpoint is not None and not isinstance(endpoint, str):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "endpoint 必须是 string"})
+    endpoint = (endpoint.strip() if isinstance(endpoint, str) and endpoint.strip() else None)
+
+    if extra is None:
+        extra = {}
+    if not isinstance(extra, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "extra 必须是 JSON 对象"})
+
+    if credentials is None:
+        credentials = {}
+    if not isinstance(credentials, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "credentials 必须是 JSON 对象"})
+
     session_factory = get_session_factory()
     async with session_factory() as session:
-        cfg = await _get_or_create_ai_config(session)
-        before_raw = _normalize_value(cfg.value_json)
-        before_audit = _ai_config_audit_view(before_raw)
-        v = dict(before_raw)
+        exists = (await session.scalars(select(AiProvider).where(AiProvider.name == name).limit(1))).first()
+        if exists is not None:
+            raise HTTPException(status_code=409, detail={"code": "CONFLICT", "message": "Provider name 已存在"})
 
-        def _opt_bool(field: str) -> bool | None:
-            if field not in body:
-                return None
-            val = body.get(field)
-            if val is None:
-                return None
-            if isinstance(val, bool):
-                return val
-            raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 必须是 boolean"})
-
-        def _opt_str(field: str) -> str | None:
-            if field not in body:
-                return None
-            val = body.get(field)
-            if val is None:
-                return None
-            if not isinstance(val, str):
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 必须是 string"})
-            return val
-
-        def _opt_int(field: str, *, ge: int, le: int) -> int | None:
-            if field not in body:
-                return None
-            val = body.get(field)
-            if val is None:
-                return None
-            if isinstance(val, bool) or not isinstance(val, (int, float)):
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 必须是 number"})
-            n = int(val)
-            if n < ge or n > le:
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 范围不合法"})
-            return n
-
-        def _opt_float(field: str, *, ge: float, le: float) -> float | None:
-            if field not in body:
-                return None
-            val = body.get(field)
-            if val is None:
-                return None
-            if isinstance(val, bool) or not isinstance(val, (int, float)):
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 必须是 number"})
-            n = float(val)
-            if n < ge or n > le:
-                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": f"{field} 范围不合法"})
-            return n
-
-        # provider v1 固定 OPENAI_COMPAT
-        provider = _opt_str("provider")
-        if provider is not None and provider.strip() and provider.strip() != "OPENAI_COMPAT":
-            raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "provider 不支持"})
-
-        enabled = _opt_bool("enabled")
-        base_url = _opt_str("baseUrl")
-        model = _opt_str("model")
-        system_prompt = _opt_str("systemPrompt")
-        temperature = _opt_float("temperature", ge=0.0, le=2.0)
-        max_tokens = _opt_int("maxTokens", ge=1, le=200000)
-        timeout_ms = _opt_int("timeoutMs", ge=100, le=120000)
-        retries = _opt_int("retries", ge=0, le=10)
-        rate_limit = _opt_int("rateLimitPerMinute", ge=1, le=100000)
-        api_key_raw = _opt_str("apiKey")
-
-        changed_fields: list[str] = []
-        api_key_updated = False
-
-        if enabled is not None and bool(enabled) != bool(v.get("enabled", False)):
-            v["enabled"] = bool(enabled)
-            changed_fields.append("enabled")
-        if base_url is not None:
-            new_val = base_url.strip()
-            if new_val != str(v.get("baseUrl", "") or ""):
-                v["baseUrl"] = new_val
-                changed_fields.append("baseUrl")
-        if model is not None:
-            new_val = model.strip()
-            if new_val != str(v.get("model", "") or ""):
-                v["model"] = new_val
-                changed_fields.append("model")
-        if system_prompt is not None:
-            if system_prompt != str(v.get("systemPrompt", "") or ""):
-                v["systemPrompt"] = system_prompt
-                changed_fields.append("systemPrompt")
-        if temperature is not None and float(temperature) != float(v.get("temperature", 0.7)):
-            v["temperature"] = float(temperature)
-            changed_fields.append("temperature")
-        if max_tokens is not None and int(max_tokens) != int(v.get("maxTokens", 1024)):
-            v["maxTokens"] = int(max_tokens)
-            changed_fields.append("maxTokens")
-        if timeout_ms is not None and int(timeout_ms) != int(v.get("timeoutMs", 15000)):
-            v["timeoutMs"] = int(timeout_ms)
-            changed_fields.append("timeoutMs")
-        if retries is not None and int(retries) != int(v.get("retries", 1)):
-            v["retries"] = int(retries)
-            changed_fields.append("retries")
-        if rate_limit is not None and int(rate_limit) != int(v.get("rateLimitPerMinute", 30)):
-            v["rateLimitPerMinute"] = int(rate_limit)
-            changed_fields.append("rateLimitPerMinute")
-
-        # apiKey：允许可选更新；空字符串视为“不更新”；同值更新视为 no-op
-        if api_key_raw is not None:
-            key = api_key_raw.strip()
-            if key:
-                before_key = str(v.get("apiKey", "") or "")
-                if key != before_key:
-                    v["apiKey"] = key
-                    changed_fields.append("apiKey")
-                    api_key_updated = True
-
-        if changed_fields:
-            # 版本号：仅在“实际变更”时变化；避免同秒内更新产生相同 version
-            new_version = _now_version()
-            if str(v.get("version", "")) == str(new_version):
-                try:
-                    new_version = str(int(new_version) + 1)
-                except Exception:  # noqa: BLE001
-                    new_version = f"{new_version}-1"
-            v["version"] = new_version
-            after_audit = _ai_config_audit_view(v)
-
-            cfg.value_json = v
-            session.add(
-                AuditLog(
-                    id=str(uuid4()),
-                    actor_type=AuditActorType.ADMIN.value,
-                    actor_id=admin_id,
-                    action=AuditAction.UPDATE.value,
-                    resource_type="AI_CONFIG",
-                    resource_id=_KEY_AI_CONFIG,
-                    summary="ADMIN 更新 AI 配置",
-                    ip=getattr(getattr(request, "client", None), "host", None),
-                    user_agent=request.headers.get("User-Agent"),
-                    metadata_json={
-                        "requestId": request.state.request_id,
-                        "resourceKey": _KEY_AI_CONFIG,
-                        "changedFields": changed_fields,
-                        "apiKeyUpdated": api_key_updated,
-                        "before": before_audit,
-                        "after": after_audit,
-                    },
-                )
+        row = AiProvider(
+            id=str(uuid4()),
+            name=name,
+            provider_type=str(provider_type.strip()),
+            credentials_json=dict(credentials),
+            endpoint=endpoint,
+            extra_json=dict(extra),
+            status=CommonEnabledStatus.ENABLED.value,
+        )
+        session.add(row)
+        session.add(
+            AuditLog(
+                id=str(uuid4()),
+                actor_type=AuditActorType.ADMIN.value,
+                actor_id=admin_id,
+                action=AuditAction.CREATE.value,
+                resource_type="AI_PROVIDER",
+                resource_id=str(row.id),
+                summary="ADMIN 创建 AI Provider",
+                ip=getattr(getattr(request, "client", None), "host", None),
+                user_agent=request.headers.get("User-Agent"),
+                metadata_json={
+                    "requestId": request.state.request_id,
+                    "after": _safe_provider_audit_view(row),
+                },
             )
-            await session.commit()
-        else:
-            # no-op：不 bump version，不写审计
-            await session.commit()
+        )
+        await session.commit()
 
-    data = AdminAiConfigResp(**_ai_config_public_view(v)).model_dump()
+    data = AdminAiProviderResp(**_safe_provider_audit_view(row)).model_dump()
     payload = ok(data=data, request_id=request.state.request_id)
     await IdempotencyService(get_redis()).set(
-        operation=_OPERATION_PUT_AI_CONFIG,
+        operation=_OPERATION_POST_AI_PROVIDER,
         actor_type="ADMIN",
         actor_id=admin_id,
         idempotency_key=idem_key,
         result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
     )
     return payload
+
+
+@router.put("/admin/ai/providers/{providerId}")
+async def admin_update_ai_provider(
+    request: Request,
+    providerId: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _admin: ActorContext = Depends(require_admin),
+):
+    admin_id = str(_admin.sub)
+    idem_key = _require_idempotency_key(idempotency_key)
+    replay = await _idempotency_replay_if_exists(
+        request=request,
+        operation=_OPERATION_PUT_AI_PROVIDER,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+    )
+    if replay is not None:
+        return replay
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "body 必须是 JSON 对象"})
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        row = (await session.scalars(select(AiProvider).where(AiProvider.id == providerId).limit(1))).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Provider 不存在"})
+
+        before = _safe_provider_audit_view(row)
+        changed: list[str] = []
+        api_key_updated = False
+
+        # name
+        if "name" in body:
+            val = body.get("name")
+            if val is None:
+                pass
+            elif not isinstance(val, str) or not val.strip():
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "name 必须是 string"})
+            else:
+                new_name = val.strip()
+                if new_name != row.name:
+                    exists = (await session.scalars(select(AiProvider).where(AiProvider.name == new_name).limit(1))).first()
+                    if exists is not None and exists.id != row.id:
+                        raise HTTPException(status_code=409, detail={"code": "CONFLICT", "message": "Provider name 已存在"})
+                    row.name = new_name
+                    changed.append("name")
+
+        # providerType
+        if "providerType" in body or "provider_type" in body:
+            val = body.get("providerType") if "providerType" in body else body.get("provider_type")
+            if val is None:
+                pass
+            elif not isinstance(val, str) or val.strip() not in {x.value for x in AiProviderType}:
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "providerType 不合法"})
+            else:
+                new_t = val.strip()
+                if new_t != row.provider_type:
+                    row.provider_type = new_t
+                    changed.append("providerType")
+
+        # endpoint
+        if "endpoint" in body:
+            val = body.get("endpoint")
+            if val is None:
+                if row.endpoint is not None:
+                    row.endpoint = None
+                    changed.append("endpoint")
+            elif not isinstance(val, str):
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "endpoint 必须是 string"})
+            else:
+                new_ep = val.strip() or None
+                if new_ep != row.endpoint:
+                    row.endpoint = new_ep
+                    changed.append("endpoint")
+
+        # extra
+        if "extra" in body:
+            val = body.get("extra")
+            if val is None:
+                pass
+            elif not isinstance(val, dict):
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "extra 必须是 JSON 对象"})
+            else:
+                row.extra_json = dict(val)
+                changed.append("extra")
+
+        # status
+        if "status" in body:
+            val = body.get("status")
+            if val is None:
+                pass
+            elif not isinstance(val, str) or val.strip() not in {CommonEnabledStatus.ENABLED.value, CommonEnabledStatus.DISABLED.value}:
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "status 不合法"})
+            else:
+                new_status = val.strip()
+                if new_status != row.status:
+                    row.status = new_status
+                    changed.append("status")
+
+        # credentials：允许可选更新；api_key 空字符串视为“不更新”
+        if "credentials" in body:
+            val = body.get("credentials")
+            if val is None:
+                pass
+            elif not isinstance(val, dict):
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "credentials 必须是 JSON 对象"})
+            else:
+                cur = dict(row.credentials_json or {})
+                for k, v in val.items():
+                    if k in ("api_key", "apiKey"):
+                        if isinstance(v, str) and v.strip():
+                            if v.strip() != str(cur.get(k) or ""):
+                                cur[k] = v.strip()
+                                api_key_updated = True
+                                changed.append("apiKey")
+                        # 空字符串：不更新
+                        continue
+                    cur[k] = v
+                row.credentials_json = cur
+                if "credentials" not in changed:
+                    changed.append("credentials")
+
+        if changed:
+            after = _safe_provider_audit_view(row)
+            session.add(
+                AuditLog(
+                    id=str(uuid4()),
+                    actor_type=AuditActorType.ADMIN.value,
+                    actor_id=admin_id,
+                    action=AuditAction.UPDATE.value,
+                    resource_type="AI_PROVIDER",
+                    resource_id=str(row.id),
+                    summary="ADMIN 更新 AI Provider",
+                    ip=getattr(getattr(request, "client", None), "host", None),
+                    user_agent=request.headers.get("User-Agent"),
+                    metadata_json={
+                        "requestId": request.state.request_id,
+                        "changedFields": changed,
+                        "apiKeyUpdated": api_key_updated,
+                        "before": before,
+                        "after": after,
+                    },
+                )
+            )
+        await session.commit()
+
+    data = AdminAiProviderResp(**_safe_provider_audit_view(row)).model_dump()
+    payload = ok(data=data, request_id=request.state.request_id)
+    await IdempotencyService(get_redis()).set(
+        operation=_OPERATION_PUT_AI_PROVIDER,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+        result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
+    )
+    return payload
+
+
+@router.post("/admin/ai/providers/{providerId}/test-connection")
+async def admin_test_ai_provider_connection(
+    request: Request,
+    providerId: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _admin: ActorContext = Depends(require_admin),
+):
+    admin_id = str(_admin.sub)
+    idem_key = _require_idempotency_key(idempotency_key)
+    replay = await _idempotency_replay_if_exists(
+        request=request,
+        operation=_OPERATION_TEST_AI_PROVIDER,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+    )
+    if replay is not None:
+        return replay
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        row = (await session.scalars(select(AiProvider).where(AiProvider.id == providerId).limit(1))).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Provider 不存在"})
+        provider = _as_provider_snapshot(row)
+
+    adapter = create_adapter(provider)
+    # 用一个最小 StrategySnapshot 做连通性探测（不代表真实业务策略）
+    strategy = _as_strategy_snapshot(scene="connection_test", prompt_template="", generation_config={}, constraints={})
+
+    started = time.perf_counter()
+    try:
+        r = await adapter.execute(
+            provider=provider,
+            strategy=strategy,
+            user_input="ping",
+            context=AiCallContext(user_id=admin_id, request_id=request.state.request_id),
+        )
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        data = {"ok": True, "latencyMs": latency_ms, "providerLatencyMs": r.provider_latency_ms}
+        payload = ok(data=data, request_id=request.state.request_id)
+        await IdempotencyService(get_redis()).set(
+            operation=_OPERATION_TEST_AI_PROVIDER,
+            actor_type="ADMIN",
+            actor_id=admin_id,
+            idempotency_key=idem_key,
+            result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
+        )
+        return payload
+    except HTTPException as exc:
+        # 对外仍返回业务错误结构（不透传第三方细节）
+        err = exc.detail if isinstance(exc.detail, dict) else {"code": "INTERNAL_ERROR", "message": "连接测试失败", "details": None}
+        await IdempotencyService(get_redis()).set(
+            operation=_OPERATION_TEST_AI_PROVIDER,
+            actor_type="ADMIN",
+            actor_id=admin_id,
+            idempotency_key=idem_key,
+            result=IdempotencyCachedResult(status_code=int(exc.status_code), success=False, data=None, error=err),
+        )
+        raise
+
+
+@router.post("/admin/ai/strategies")
+async def admin_create_ai_strategy(
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _admin: ActorContext = Depends(require_admin),
+):
+    admin_id = str(_admin.sub)
+    idem_key = _require_idempotency_key(idempotency_key)
+    replay = await _idempotency_replay_if_exists(
+        request=request,
+        operation=_OPERATION_POST_AI_STRATEGY,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+    )
+    if replay is not None:
+        return replay
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "body 必须是 JSON 对象"})
+
+    scene = body.get("scene")
+    display_name = body.get("displayName") if "displayName" in body else body.get("display_name")
+    prompt_template = body.get("promptTemplate") if "promptTemplate" in body else body.get("prompt_template")
+    generation_config = body.get("generationConfig") if "generationConfig" in body else body.get("generation_config")
+    constraints = body.get("constraints")
+    provider_id = body.get("providerId") if "providerId" in body else body.get("provider_id")
+
+    if not isinstance(scene, str) or not scene.strip():
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "scene 必须是 string"})
+    scene = scene.strip()
+    if display_name is None:
+        display_name = ""
+    if not isinstance(display_name, str):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "displayName 必须是 string"})
+    if prompt_template is None:
+        prompt_template = ""
+    if not isinstance(prompt_template, str):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "promptTemplate 必须是 string"})
+
+    if generation_config is None:
+        generation_config = {}
+    if not isinstance(generation_config, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "generationConfig 必须是 JSON 对象"})
+    if constraints is None:
+        constraints = {}
+    if not isinstance(constraints, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "constraints 必须是 JSON 对象"})
+    if provider_id is not None and not isinstance(provider_id, str):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "providerId 必须是 string"})
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        exists = (await session.scalars(select(AiStrategy).where(AiStrategy.scene == scene).limit(1))).first()
+        if exists is not None:
+            raise HTTPException(status_code=409, detail={"code": "CONFLICT", "message": "scene 已存在"})
+
+        # 可选：校验 providerId 存在（若传入）
+        if provider_id and provider_id.strip():
+            pv = (await session.scalars(select(AiProvider).where(AiProvider.id == provider_id.strip()).limit(1))).first()
+            if pv is None:
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "providerId 不存在"})
+
+        row = AiStrategy(
+            id=str(uuid4()),
+            scene=scene,
+            display_name=str(display_name),
+            provider_id=(provider_id.strip() if isinstance(provider_id, str) and provider_id.strip() else None),
+            prompt_template=str(prompt_template),
+            generation_config_json=dict(generation_config),
+            constraints_json=dict(constraints),
+            status=CommonEnabledStatus.ENABLED.value,
+        )
+        session.add(row)
+        session.add(
+            AuditLog(
+                id=str(uuid4()),
+                actor_type=AuditActorType.ADMIN.value,
+                actor_id=admin_id,
+                action=AuditAction.CREATE.value,
+                resource_type="AI_STRATEGY",
+                resource_id=str(row.id),
+                summary="ADMIN 创建 AI Strategy",
+                ip=getattr(getattr(request, "client", None), "host", None),
+                user_agent=request.headers.get("User-Agent"),
+                metadata_json={"requestId": request.state.request_id, "after": _safe_strategy_audit_view(row)},
+            )
+        )
+        await session.commit()
+
+    data = AdminAiStrategyResp(**_safe_strategy_audit_view(row)).model_dump()
+    payload = ok(data=data, request_id=request.state.request_id)
+    await IdempotencyService(get_redis()).set(
+        operation=_OPERATION_POST_AI_STRATEGY,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+        result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
+    )
+    return payload
+
+
+@router.put("/admin/ai/strategies/{strategyId}")
+async def admin_update_ai_strategy(
+    request: Request,
+    strategyId: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _admin: ActorContext = Depends(require_admin),
+):
+    admin_id = str(_admin.sub)
+    idem_key = _require_idempotency_key(idempotency_key)
+    replay = await _idempotency_replay_if_exists(
+        request=request,
+        operation=_OPERATION_PUT_AI_STRATEGY,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+    )
+    if replay is not None:
+        return replay
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "body 必须是 JSON 对象"})
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        row = (await session.scalars(select(AiStrategy).where(AiStrategy.id == strategyId).limit(1))).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Strategy 不存在"})
+        before = _safe_strategy_audit_view(row)
+        changed: list[str] = []
+
+        if "displayName" in body or "display_name" in body:
+            val = body.get("displayName") if "displayName" in body else body.get("display_name")
+            if val is not None:
+                if not isinstance(val, str):
+                    raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "displayName 必须是 string"})
+                if val != str(row.display_name or ""):
+                    row.display_name = val
+                    changed.append("displayName")
+
+        if "promptTemplate" in body or "prompt_template" in body:
+            val = body.get("promptTemplate") if "promptTemplate" in body else body.get("prompt_template")
+            if val is not None:
+                if not isinstance(val, str):
+                    raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "promptTemplate 必须是 string"})
+                if val != str(row.prompt_template or ""):
+                    row.prompt_template = val
+                    changed.append("promptTemplate")
+
+        if "generationConfig" in body or "generation_config" in body:
+            val = body.get("generationConfig") if "generationConfig" in body else body.get("generation_config")
+            if val is not None:
+                if not isinstance(val, dict):
+                    raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "generationConfig 必须是 JSON 对象"})
+                row.generation_config_json = dict(val)
+                changed.append("generationConfig")
+
+        if "constraints" in body:
+            val = body.get("constraints")
+            if val is not None:
+                if not isinstance(val, dict):
+                    raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "constraints 必须是 JSON 对象"})
+                row.constraints_json = dict(val)
+                changed.append("constraints")
+
+        if "status" in body:
+            val = body.get("status")
+            if val is not None:
+                if not isinstance(val, str) or val.strip() not in {CommonEnabledStatus.ENABLED.value, CommonEnabledStatus.DISABLED.value}:
+                    raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "status 不合法"})
+                new_status = val.strip()
+                if new_status != row.status:
+                    row.status = new_status
+                    changed.append("status")
+
+        # providerId 只允许通过 bind 接口更新（避免混在普通编辑里造成误操作）
+
+        if changed:
+            after = _safe_strategy_audit_view(row)
+            session.add(
+                AuditLog(
+                    id=str(uuid4()),
+                    actor_type=AuditActorType.ADMIN.value,
+                    actor_id=admin_id,
+                    action=AuditAction.UPDATE.value,
+                    resource_type="AI_STRATEGY",
+                    resource_id=str(row.id),
+                    summary="ADMIN 更新 AI Strategy",
+                    ip=getattr(getattr(request, "client", None), "host", None),
+                    user_agent=request.headers.get("User-Agent"),
+                    metadata_json={"requestId": request.state.request_id, "changedFields": changed, "before": before, "after": after},
+                )
+            )
+        await session.commit()
+
+    data = AdminAiStrategyResp(**_safe_strategy_audit_view(row)).model_dump()
+    payload = ok(data=data, request_id=request.state.request_id)
+    await IdempotencyService(get_redis()).set(
+        operation=_OPERATION_PUT_AI_STRATEGY,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+        result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
+    )
+    return payload
+
+
+@router.post("/admin/ai/strategies/{strategyId}/bind-provider")
+async def admin_bind_ai_strategy_provider(
+    request: Request,
+    strategyId: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _admin: ActorContext = Depends(require_admin),
+):
+    # 说明：开发/测试阶段允许快速联调，不要求 admin 先绑手机（2FA）。
+    admin_id = str(_admin.sub)
+    idem_key = _require_idempotency_key(idempotency_key)
+    replay = await _idempotency_replay_if_exists(
+        request=request,
+        operation=_OPERATION_BIND_AI_STRATEGY_PROVIDER,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+    )
+    if replay is not None:
+        return replay
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "body 必须是 JSON 对象"})
+    provider_id = body.get("providerId") if "providerId" in body else body.get("provider_id")
+    if provider_id is not None and not isinstance(provider_id, str):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "providerId 必须是 string"})
+    provider_id = (provider_id.strip() if isinstance(provider_id, str) and provider_id.strip() else None)
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        st = (await session.scalars(select(AiStrategy).where(AiStrategy.id == strategyId).limit(1))).first()
+        if st is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Strategy 不存在"})
+        before = _safe_strategy_audit_view(st)
+
+        if provider_id is not None:
+            pv = (await session.scalars(select(AiProvider).where(AiProvider.id == provider_id).limit(1))).first()
+            if pv is None:
+                raise HTTPException(status_code=400, detail={"code": "INVALID_ARGUMENT", "message": "providerId 不存在"})
+
+        if provider_id != (str(st.provider_id) if st.provider_id else None):
+            st.provider_id = provider_id
+            after = _safe_strategy_audit_view(st)
+            session.add(
+                AuditLog(
+                    id=str(uuid4()),
+                    actor_type=AuditActorType.ADMIN.value,
+                    actor_id=admin_id,
+                    action=AuditAction.UPDATE.value,
+                    resource_type="AI_STRATEGY_BINDING",
+                    resource_id=str(st.id),
+                    summary="ADMIN 绑定 Strategy Provider",
+                    ip=getattr(getattr(request, "client", None), "host", None),
+                    user_agent=request.headers.get("User-Agent"),
+                    metadata_json={"requestId": request.state.request_id, "before": before, "after": after},
+                )
+            )
+        await session.commit()
+
+    data = AdminAiStrategyResp(**_safe_strategy_audit_view(st)).model_dump()
+    payload = ok(data=data, request_id=request.state.request_id)
+    await IdempotencyService(get_redis()).set(
+        operation=_OPERATION_BIND_AI_STRATEGY_PROVIDER,
+        actor_type="ADMIN",
+        actor_id=admin_id,
+        idempotency_key=idem_key,
+        result=IdempotencyCachedResult(status_code=200, success=True, data=data, error=None),
+    )
+    return payload
+
+
+class AdminAiDevResetBody(BaseModel):
+    resetAudit: bool = True
+    resetChatAudits: bool = False
+
+
+@router.post("/admin/ai/dev/reset")
+async def admin_dev_reset_ai_config(
+    request: Request,
+    body: AdminAiDevResetBody,
+    _admin: ActorContext = Depends(require_admin),
+):
+    # 仅开发/测试允许：避免生产误删
+    if str(getattr(settings, "app_env", "") or "").strip().lower() == "production":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "生产环境禁止清空 AI 配置"})
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        # 先删 Strategy 再删 Provider（避免外键/逻辑依赖；当前无 FK 也按此顺序更安全）
+        await session.execute(delete(AiStrategy))
+        await session.execute(delete(AiProvider))
+
+        if body.resetAudit:
+            # 清理配置类审计（不含对话审计）
+            await session.execute(
+                delete(AuditLog).where(
+                    AuditLog.resource_type.in_(["AI_PROVIDER", "AI_STRATEGY", "AI_STRATEGY_BINDING", "AI_MIGRATION"])
+                )
+            )
+        if body.resetChatAudits:
+            await session.execute(delete(AuditLog).where(AuditLog.resource_type == "AI_CHAT"))
+
+        await session.commit()
+
+    return ok(data={"reset": True}, request_id=request.state.request_id)
 
 
 # -----------------------------
@@ -434,6 +874,7 @@ async def admin_list_ai_audit_logs(
     resultStatus: Literal["success", "fail"] | None = None,
     provider: str | None = None,
     model: str | None = None,
+    scene: str | None = None,
     dateFrom: str | None = None,
     dateTo: str | None = None,
     page: int = 1,
@@ -460,6 +901,8 @@ async def admin_list_ai_audit_logs(
         stmt = stmt.where(_json_str("provider") == provider.strip())
     if model and model.strip():
         stmt = stmt.where(_json_str("model") == model.strip())
+    if scene and scene.strip():
+        stmt = stmt.where(_json_str("scene") == scene.strip())
 
     # Spec (Admin): dateFrom/dateTo are Beijing natural days (YYYY-MM-DD)
     if dateFrom:
@@ -488,6 +931,7 @@ async def admin_list_ai_audit_logs(
                 "timestamp": _iso(x.created_at),
                 "provider": str(meta.get("provider") or ""),
                 "model": str(meta.get("model") or ""),
+                "scene": str(meta.get("scene") or ""),
                 "latencyMs": int(meta.get("latencyMs") or 0),
                 "resultStatus": str(meta.get("resultStatus") or ""),
                 "errorCode": (str(meta.get("errorCode")) if meta.get("errorCode") else None),

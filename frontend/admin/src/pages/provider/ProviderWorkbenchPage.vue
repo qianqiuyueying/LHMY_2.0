@@ -75,7 +75,7 @@ async function loadAgreement(code: 'PROVIDER_INFRA_APPLY' | 'PROVIDER_HEALTH_CAR
     const data = await apiRequest<{ code: string; title: string; contentHtml: string; version: string }>(`/legal/${code}`)
     agreementTitle.value = String(data.title || '协议')
     agreementContentHtml.value = String(data.contentHtml || '<p>暂无协议内容</p>')
-  } catch (e: any) {
+  } catch {
     agreementTitle.value = '协议'
     agreementContentHtml.value = '<p>协议加载失败</p>'
   } finally {

@@ -1,14 +1,12 @@
-"""AI 网关（阶段11，v1 最小可执行）。
+"""AI 网关（v2：Provider/Strategy/Gateway）。
 
-规格来源（已确认）：
-- specs/health-services-platform/design.md -> AI 对话能力（中转模式/稳定性/审计字段示例）
-- specs/health-services-platform/tasks.md -> 阶段11「规格补充（待确认）」-> 用户已确认
+规格来源（单一真相来源）：
+- specs/health-services-platform/ai-gateway-v2.md
 
-约束：
+约束（继承 v1 的运行门禁）：
 - 必须登录（USER token）
+- 写操作必须幂等（Idempotency-Key）
 - 不持久化对话内容（不落库 messages）
-- Provider 协议固定 OPENAI_COMPAT：`${baseUrl}/v1/chat/completions`
-- 停用/配置缺失：FORBIDDEN(403) + message 明确原因
 """
 
 from __future__ import annotations
@@ -18,15 +16,17 @@ from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
-import httpx
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.models.audit_log import AuditLog
-from app.models.enums import AuditAction, AuditActorType, CommonEnabledStatus
-from app.models.system_config import SystemConfig
+from app.models.ai_provider import AiProvider
+from app.models.ai_strategy import AiStrategy
+from app.models.enums import AuditAction, AuditActorType
 from app.services.idempotency import IdempotencyCachedResult, IdempotencyService
+from app.services.ai.gateway import call_ai
+from app.services.ai.types import AiCallContext
 from app.utils.db import get_session_factory
 from app.utils.jwt_token import decode_and_validate_user_token
 from app.utils.redis_client import get_redis
@@ -34,8 +34,6 @@ from app.utils.response import ok
 from app.utils.auth_header import extract_bearer_token as _extract_bearer_token
 
 router = APIRouter(tags=["ai"])
-
-_KEY_AI_CONFIG = "AI_CONFIG"
 
 def _require_idempotency_key(idempotency_key: str | None) -> str:
     if not idempotency_key or not idempotency_key.strip():
@@ -49,53 +47,6 @@ def _user_id_from_authorization(authorization: str | None) -> str:
     return str(payload["sub"])
 
 
-async def _get_or_create_ai_config(session) -> SystemConfig:
-    cfg = (await session.scalars(select(SystemConfig).where(SystemConfig.key == _KEY_AI_CONFIG).limit(1))).first()
-    if cfg is not None:
-        return cfg
-
-    default_value = {
-        "enabled": False,
-        "provider": "OPENAI_COMPAT",
-        "baseUrl": "",
-        "apiKey": "",
-        "model": "",
-        "systemPrompt": "",
-        "temperature": 0.7,
-        "maxTokens": 1024,
-        "timeoutMs": 15000,
-        "retries": 1,
-        "rateLimitPerMinute": 30,
-        "version": str(int(time.time())),
-    }
-    cfg = SystemConfig(
-        id=str(uuid4()),
-        key=_KEY_AI_CONFIG,
-        value_json=default_value,
-        description="AI config for mini-program chat gateway",
-        status=CommonEnabledStatus.ENABLED.value,
-    )
-    session.add(cfg)
-    await session.commit()
-    await session.refresh(cfg)
-    return cfg
-
-
-def _normalize_cfg(value: dict) -> dict:
-    v = dict(value or {})
-    v.setdefault("enabled", False)
-    v.setdefault("provider", "OPENAI_COMPAT")
-    v.setdefault("baseUrl", "")
-    v.setdefault("apiKey", "")
-    v.setdefault("model", "")
-    v.setdefault("systemPrompt", "")
-    v.setdefault("temperature", 0.7)
-    v.setdefault("maxTokens", 1024)
-    v.setdefault("timeoutMs", 15000)
-    v.setdefault("retries", 1)
-    v.setdefault("rateLimitPerMinute", 30)
-    v.setdefault("version", str(int(time.time())))
-    return v
 
 
 async def _rate_limit_or_raise(*, user_id: str, limit_per_minute: int) -> None:
@@ -112,21 +63,14 @@ async def _rate_limit_or_raise(*, user_id: str, limit_per_minute: int) -> None:
         raise HTTPException(status_code=429, detail={"code": "RATE_LIMITED", "message": "AI 调用频率过高，请稍后再试"})
 
 
-class AiMessage(BaseModel):
-    role: Literal["user", "assistant", "system"]
-    content: str = Field(..., min_length=1, max_length=20000)
-
-
 class AiChatBody(BaseModel):
-    messages: list[AiMessage] = Field(..., min_length=1)
-    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
-    maxTokens: int | None = Field(default=None, ge=1, le=200000)
+    scene: str = Field(..., min_length=1, max_length=64)
+    message: str = Field(..., min_length=1, max_length=20000)
 
 
 class AiChatResp(BaseModel):
     message: dict
-    provider: str
-    model: str
+    scene: str
 
 
 async def _audit_ai_call(
@@ -134,6 +78,7 @@ async def _audit_ai_call(
     user_id: str,
     provider: str,
     model: str,
+    scene: str,
     latency_ms: int,
     result_status: Literal["success", "fail"],
     error_code: str | None,
@@ -156,6 +101,7 @@ async def _audit_ai_call(
             "timestamp": int(time.time()),
             "provider": str(provider),
             "model": str(model),
+            "scene": str(scene),
             "latencyMs": int(latency_ms),
             "resultStatus": str(result_status),
             "errorCode": (str(error_code) if error_code else None),
@@ -168,77 +114,6 @@ async def _audit_ai_call(
     async with session_factory() as session:
         session.add(log)
         await session.commit()
-
-
-async def _openai_compat_chat(
-    *,
-    base_url: str,
-    api_key: str,
-    model: str,
-    messages: list[dict],
-    system_prompt: str | None,
-    temperature: float,
-    max_tokens: int,
-    timeout_ms: int,
-    retries: int,
-) -> tuple[str, int]:
-    url = base_url.rstrip("/") + "/v1/chat/completions"
-
-    final_messages = list(messages)
-    if system_prompt and system_prompt.strip():
-        # v1：将 systemPrompt 作为首条 system message 注入
-        final_messages = [{"role": "system", "content": system_prompt.strip()}] + final_messages
-
-    payload = {
-        "model": model,
-        "messages": final_messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    timeout_s = max(0.1, float(timeout_ms) / 1000.0)
-    max_attempts = 1 + max(0, int(retries))
-    last_exc: Exception | None = None
-
-    for attempt in range(max_attempts):
-        try:
-            async with httpx.AsyncClient(timeout=timeout_s) as client:
-                resp = await client.post(url, json=payload, headers=headers)
-            # 仅对 5xx 重试；4xx 直接失败
-            if resp.status_code >= 500 and attempt < max_attempts - 1:
-                continue
-            data = resp.json()
-            if resp.status_code != 200:
-                # 兼容返回结构：尽量提取错误信息但不对外透传
-                raise HTTPException(
-                    status_code=500,
-                    detail={
-                        "code": "INTERNAL_ERROR",
-                        "message": "AI 服务调用失败",
-                        "details": {"status": resp.status_code},
-                    },
-                )
-
-            content = (
-                (data.get("choices") or [{}])[0].get("message", {}).get("content") if isinstance(data, dict) else None
-            )
-            if not content or not str(content).strip():
-                raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": "AI 服务返回异常"})
-            return str(content), int(resp.elapsed.total_seconds() * 1000)
-        except HTTPException:
-            # 已包装为 INTERNAL_ERROR
-            raise
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            if attempt < max_attempts - 1:
-                continue
-            break
-
-    raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": "AI 服务调用失败"}) from last_exc
 
 
 @router.post("/ai/chat")
@@ -262,54 +137,42 @@ async def ai_chat(
         err = cached.error or {"code": "INTERNAL_ERROR", "message": "服务器内部错误", "details": None}
         raise HTTPException(status_code=int(cached.status_code), detail=err)
 
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        cfg = await _get_or_create_ai_config(session)
-        v = _normalize_cfg(cfg.value_json)
-
-    if not bool(v.get("enabled", False)):
-        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "AI 功能已停用"})
-    if str(v.get("provider", "") or "") != "OPENAI_COMPAT":
-        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "AI Provider 配置不支持"})
-
-    base_url = str(v.get("baseUrl", "") or "").strip()
-    api_key = str(v.get("apiKey", "") or "").strip()
-    model = str(v.get("model", "") or "").strip()
-    if not base_url or not api_key or not model:
-        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "AI 配置不完整"})
-
-    # 频控（按用户维度）
-    await _rate_limit_or_raise(user_id=user_id, limit_per_minute=int(v.get("rateLimitPerMinute", 30)))
-
-    temperature = float(body.temperature) if body.temperature is not None else float(v.get("temperature", 0.7))
-    max_tokens = int(body.maxTokens) if body.maxTokens is not None else int(v.get("maxTokens", 1024))
-    timeout_ms = int(v.get("timeoutMs", 15000))
-    retries = int(v.get("retries", 1))
-    system_prompt = str(v.get("systemPrompt", "") or "").strip() or None
-    config_version = str(v.get("version", "") or "") or None
-
-    messages = [m.model_dump() for m in body.messages]
+    scene = str(body.scene or "").strip()
+    user_message = str(body.message or "").strip()
 
     started = time.perf_counter()
     error_code: str | None = None
+    provider_for_audit = ""
+    model_for_audit = ""
+    config_version: str | None = None
     try:
-        content, _provider_latency_ms = await _openai_compat_chat(
-            base_url=base_url,
-            api_key=api_key,
-            model=model,
-            messages=messages,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout_ms=timeout_ms,
-            retries=retries,
+        # v2：频控（按用户维度），limit 来自 Provider.extra.rateLimitPerMinute（缺省 30）
+        limit_per_minute = 30
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            st = (await session.scalars(select(AiStrategy).where(AiStrategy.scene == scene).limit(1))).first()
+            if st is not None and st.provider_id:
+                pv = (await session.scalars(select(AiProvider).where(AiProvider.id == st.provider_id).limit(1))).first()
+                if pv is not None:
+                    try:
+                        limit_per_minute = int((pv.extra_json or {}).get("rateLimitPerMinute") or 30)
+                    except Exception:  # noqa: BLE001
+                        limit_per_minute = 30
+        await _rate_limit_or_raise(user_id=user_id, limit_per_minute=limit_per_minute)
+
+        gw = await call_ai(
+            scene=scene,
+            user_input=user_message,
+            context=AiCallContext(user_id=user_id, request_id=request.state.request_id),
         )
         cost_ms = int((time.perf_counter() - started) * 1000)
-        # 优先用本地耗时（包含重试），provider_latency_ms 仅供参考
+        provider_for_audit = str(gw.provider.provider_type or "")
+        model_for_audit = str((gw.provider.extra or {}).get("default_model") or "")
         await _audit_ai_call(
             user_id=user_id,
-            provider="OPENAI_COMPAT",
-            model=model,
+            provider=provider_for_audit,
+            model=model_for_audit,
+            scene=scene,
             latency_ms=cost_ms,
             result_status="success",
             error_code=None,
@@ -318,7 +181,8 @@ async def ai_chat(
         )
 
         data = AiChatResp(
-            message={"role": "assistant", "content": content}, provider="OPENAI_COMPAT", model=model
+            message={"role": "assistant", "content": gw.content},
+            scene=scene,
         ).model_dump()
         await idem.set(
             operation="ai_chat",
@@ -337,8 +201,9 @@ async def ai_chat(
         if exc.status_code >= 500:
             await _audit_ai_call(
                 user_id=user_id,
-                provider="OPENAI_COMPAT",
-                model=model or "",
+                provider=provider_for_audit or "",
+                model=model_for_audit or "",
+                scene=scene,
                 latency_ms=cost_ms,
                 result_status="fail",
                 error_code=error_code,

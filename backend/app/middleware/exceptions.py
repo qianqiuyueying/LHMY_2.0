@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -42,6 +44,30 @@ def _code_from_status(status_code: int) -> str:
     return "HTTP_EXCEPTION"
 
 
+def _json_safe(value: Any) -> Any:
+    """把可能包含不可 JSON 序列化对象（如 ValueError）的结构转为 JSON-safe。
+
+    背景：Pydantic v2 的 `RequestValidationError.errors()` 里，可能在 `ctx` 放入异常对象，
+    若直接作为 JSONResponse.content 会导致序列化失败（进而变成 500，掩盖真实 400 原因）。
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, BaseException):
+        return str(value)
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            out[str(k)] = _json_safe(v)
+        return out
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    # 兜底：避免任何未知对象破坏响应序列化
+    return str(value)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -54,7 +80,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 content=fail(
                     code=str(exc.detail.get("code")),
                     message=str(exc.detail.get("message")),
-                    details=exc.detail.get("details"),
+                    details=_json_safe(exc.detail.get("details")),
                     request_id=_request_id(request),
                 ),
             )
@@ -63,7 +89,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=fail(
                 code=_code_from_status(int(exc.status_code)),
                 message=exc.detail if isinstance(exc.detail, str) else "请求错误",
-                details=exc.detail if not isinstance(exc.detail, str) else None,
+                details=_json_safe(exc.detail) if not isinstance(exc.detail, str) else None,
                 request_id=_request_id(request),
             ),
         )
@@ -75,7 +101,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=fail(
                 code="INVALID_ARGUMENT",
                 message="参数不合法",
-                details=exc.errors(),
+                details=_json_safe(exc.errors()),
                 request_id=_request_id(request),
             ),
         )

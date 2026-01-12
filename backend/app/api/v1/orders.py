@@ -21,6 +21,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+import sqlalchemy as sa
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import aliased
 
@@ -430,6 +431,8 @@ class CreateOrderBody(BaseModel):
     # 物流商品 v2：收货地址（可用地址簿 id 或直接传快照）
     shippingAddressId: str | None = None
     shippingAddress: dict | None = None
+    # H5 匿名购卡：联系方式快照（用于订单管理追踪；对外返回仅脱敏）
+    buyerPhone: str | None = None
 
 
 @router.post("/orders")
@@ -471,6 +474,12 @@ async def create_order(
                 status_code=400,
                 detail={"code": "INVALID_ARGUMENT", "message": "缺少 dealerLinkId（请使用经销商投放链接打开）"},
             )
+        buyer_phone = str(body.buyerPhone or "").strip()
+        if not buyer_phone:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_ARGUMENT", "message": "缺少 buyerPhone（匿名购卡需填写手机号）"},
+            )
         channel = "H5"
         user_id = ""  # v1：订单落库时改写为 orderId（见下方 Order.user_id）
         idem_actor_id = f"H5:{dealer_link_id}"
@@ -479,6 +488,7 @@ async def create_order(
         user_id = user_ctx["userId"]
         channel = str(user_ctx.get("channel", ""))
         idem_actor_id = user_id
+        buyer_phone = None
 
     idem_key = _require_idempotency_key(idempotency_key)
     replay = await _idempotency_replay_if_exists(
@@ -867,6 +877,7 @@ async def create_order(
             payment_status=PaymentStatus.PENDING.value,
             dealer_id=dealer_id_to_bind,
             dealer_link_id=dealer_link_id,
+            buyer_phone=buyer_phone,
             paid_at=None,
             confirmed_at=None,
             fulfillment_type=(product_fulfillment if order_type == OrderType.PRODUCT else None),
@@ -977,6 +988,18 @@ async def admin_list_orders(
 
     u = aliased(User)
 
+    # items 聚合：用于列表“订单摘要”（快速识别，不承诺真实顺序）
+    items_agg = (
+        select(
+            OrderItem.order_id.label("order_id"),
+            func.count(OrderItem.id).label("items_count"),
+            func.min(OrderItem.title).label("first_item_title"),
+        )
+        .select_from(OrderItem)
+        .group_by(OrderItem.order_id)
+        .subquery()
+    )
+
     # providerId 推导：从订单明细关联商品。若同一订单存在多个 provider，则 providerId 置空。
     provider_agg = (
         select(
@@ -997,9 +1020,16 @@ async def admin_list_orders(
     ).label("provider_id")
 
     stmt = (
-        select(Order, u.phone, provider_id_expr)
+        select(
+            Order,
+            u.phone,
+            provider_id_expr,
+            items_agg.c.items_count,
+            items_agg.c.first_item_title,
+        )
         .join(u, u.id == Order.user_id, isouter=True)
         .join(provider_agg, provider_agg.c.order_id == Order.id, isouter=True)
+        .join(items_agg, items_agg.c.order_id == Order.id, isouter=True)
     )
 
     if orderNo and orderNo.strip():
@@ -1007,7 +1037,8 @@ async def admin_list_orders(
     if userId and userId.strip():
         stmt = stmt.where(Order.user_id == userId.strip())
     if phone and phone.strip():
-        stmt = stmt.where(u.phone.like(f"%{phone.strip()}%"))
+        raw = phone.strip()
+        stmt = stmt.where(sa.or_(u.phone.like(f"%{raw}%"), Order.buyer_phone.like(f"%{raw}%")))
     if orderType:
         stmt = stmt.where(Order.order_type == str(orderType))
     if fulfillmentType:
@@ -1039,13 +1070,14 @@ async def admin_list_orders(
         rows = (await session.execute(stmt.offset((page - 1) * page_size).limit(page_size))).all()
 
     items: list[dict] = []
-    for o, buyer_phone, provider_id in rows:
+    for o, buyer_phone, provider_id, items_count, first_item_title in rows:
+        phone_to_mask = buyer_phone or getattr(o, "buyer_phone", None)
         items.append(
             {
                 "id": o.id,
                 "orderNo": o.id,  # spec：v1 口径 orderNo=id
                 "userId": o.user_id,
-                "buyerPhoneMasked": _mask_phone(buyer_phone),
+                "buyerPhoneMasked": _mask_phone(phone_to_mask),
                 "orderType": o.order_type,
                 "paymentStatus": o.payment_status,
                 "fulfillmentType": o.fulfillment_type,
@@ -1058,7 +1090,10 @@ async def admin_list_orders(
                 "trackingNoLast4": _mask_tracking_no_last4(getattr(o, "shipping_tracking_no", None)),
                 "shippedAt": _iso(getattr(o, "shipped_at", None)),
                 "dealerId": o.dealer_id,
+                "dealerLinkId": getattr(o, "dealer_link_id", None),
                 "providerId": provider_id,
+                "itemsCount": int(items_count or 0),
+                "firstItemTitle": str(first_item_title) if first_item_title else None,
                 "createdAt": _iso(o.created_at),
                 "paidAt": _iso(o.paid_at),
             }
@@ -1090,8 +1125,15 @@ async def get_order_detail(
             raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在"})
 
         items = (await session.scalars(select(OrderItem).where(OrderItem.order_id == o.id))).all()
+        buyer_phone = None
+        try:
+            # 既可能是实名订单（o.user_id 指向 User.id），也可能是匿名购卡（o.user_id=order_id，不存在 User）
+            buyer_phone = (await session.scalars(select(User.phone).where(User.id == o.user_id).limit(1))).first()
+        except Exception:
+            buyer_phone = None
 
     data = _order_dto(o, items)
+    data["buyerPhoneMasked"] = _mask_phone((buyer_phone or getattr(o, "buyer_phone", None)))
     # 规格（TASK-P0-006）：Admin 场景不返回运单号/收货地址明文
     if admin_ctx is not None:
         data.pop("shippingTrackingNo", None)

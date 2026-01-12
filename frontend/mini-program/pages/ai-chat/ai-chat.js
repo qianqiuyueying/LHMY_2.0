@@ -5,6 +5,7 @@ const api = require('../../utils/api')
 const app = getApp()
 
 const DISCLAIMER_DISMISSED_KEY = 'mp:aiChat:disclaimerDismissed'
+const DEFAULT_SCENE = 'knowledge_qa'
 
 Page({
   data: {
@@ -79,10 +80,8 @@ Page({
     try {
       // 调用AI接口
       const response = await api.post('/api/v1/ai/chat', {
-        messages: nextMessages.map((msg) => ({
-          role: msg.role,
-          content: msg.content
-        }))
+        scene: DEFAULT_SCENE,
+        message: content
       }, true, { 'Idempotency-Key': api.genIdempotencyKey('mp-ai') })
 
       // 添加AI回复

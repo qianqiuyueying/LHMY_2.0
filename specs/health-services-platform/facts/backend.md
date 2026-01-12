@@ -108,16 +108,30 @@
 
 - [x] 创建订单：`POST /api/v1/orders`（Header: `Idempotency-Key` 必填）  
   - 事实：`SERVICE_PACKAGE` 订单仅允许 `channel="H5"`；小程序不允许创建  
+  - 事实（匿名购卡）：H5 可匿名创建 `SERVICE_PACKAGE` 订单，但必须在 body 中提交 `buyerPhone`（订单联系手机号快照），后端落库为 `orders.buyer_phone`，对外仅返回脱敏  
   - 事实（vNext）：H5 创建 `SERVICE_PACKAGE` 订单必须携带 `dealerLinkId`（query），后端将据此绑定订单 `dealerId`，并校验“订单 sellableCardId 属于该经销商已授权可售范围”（严格门禁）  
   - 事实：订单会记录 `dealerLinkId`（用于经销商侧“按投放链接追踪订单”）  
   - 兼容：`dealerId/ts/nonce/sign` 签名校验能力仍保留（用于非 SERVICE_PACKAGE 场景/兼容接口），但不作为服务包购买长期投放主入口  
   - 依赖服务：`app.services.idempotency.IdempotencyService`、`app.services.dealer_signing.verify_params`、`app.services.order_rules.order_items_match_order_type`、`app.services.pricing.resolve_price`、`app.services.entitlement_scope_rules.parse_region_scope`  
-  - 证据：`backend/app/api/v1/orders.py` `create_order()`
+  - 证据：`backend/app/api/v1/orders.py` `create_order()`、模型：`backend/app/models/order.py`（`buyer_phone`）、迁移：`backend/alembic/versions/b3c4d5e6f7a8_stage39_orders_buyer_phone_snapshot.py`
 - [x] 发起支付：`POST /api/v1/orders/{id}/pay`（Header: `Idempotency-Key` 必填）  
   - 事实：支持 `mockFail=1`（非 production）稳定触发失败返回（用于联调/回归）  
   - 事实：若用户无 openid，则返回 `paymentStatus=FAILED` + 明确原因  
   - 依赖：微信支付 JSAPI 预支付封装（同文件内 `_wechatpay_jsapi_prepay/_wechatpay_build_jsapi_pay_params`）  
   - 证据：`backend/app/api/v1/orders.py` `pay_order()`
+
+#### D4.1) Admin 订单监管（列表/详情，脱敏口径）
+
+- [x] Admin 订单列表：`GET /api/v1/admin/orders`  
+  - 事实：支持按业务线固定 `orderType=PRODUCT|SERVICE_PACKAGE`（前端路由 meta 固定传参），避免混用语境  
+  - 事实：返回“订单摘要”字段用于快速识别：`itemsCount + firstItemTitle`（来自 `order_items` 聚合）  
+  - 事实：匿名服务包订单支持按 `phone` 模糊搜索（匹配 `users.phone` 或 `orders.buyer_phone`）  
+  - 事实：返回 `dealerLinkId` 便于投放追踪  
+  - 证据：`backend/app/api/v1/orders.py` `admin_list_orders()`
+- [x] Admin 订单详情：`GET /api/v1/orders/{id}`（Admin 可访问）  
+  - 事实：返回 `buyerPhoneMasked`（若匿名则来自 `orders.buyer_phone`；若实名则来自 `users.phone`），不返回手机号明文  
+  - 事实：Admin 场景收货地址只返回省/市/区 code + phoneMasked（不返回收货人姓名/手机号明文/详细地址）；运单号仅返回后 4 位  
+  - 证据：`backend/app/api/v1/orders.py` `get_order_detail()`（`_sanitize_shipping_address_for_admin/_mask_tracking_no_last4`）
 
 ### E) 小程序端关键契约（后端侧证据）
 
@@ -185,8 +199,18 @@
 ### H) AI 网关
 
 - [x] AI chat：`POST /api/v1/ai/chat`（要求登录；幂等；按用户频控；不落库对话内容，只记录审计元数据）  
-  - 配置：SystemConfig key=`AI_CONFIG`（enabled/baseUrl/apiKey/model 等）  
-  - 证据：`backend/app/api/v1/ai.py`
+  - v2 请求体：`{ scene, message }`（小程序不再传 messages/temperature/tokens）  
+  - v2 配置：Provider/Strategy（可切换，Adapter 屏蔽差异）  
+    - Provider：`ai_providers`（credentials/endpoint/extra）  
+    - Strategy：`ai_strategies`（scene/prompt_template/generation_config/constraints + provider_id 绑定）  
+  - 证据：
+    - 网关入口：`backend/app/api/v1/ai.py`
+    - Gateway/Adapter：`backend/app/services/ai/*`
+    - Admin 管理：`backend/app/api/v1/admin_ai.py`（`/admin/ai/providers|strategies|bind-provider`）
+  - v2 Provider Adapter（至少 2 个实现）：
+    - `openapi_compatible`：`backend/app/services/ai/adapters/openai_compatible.py`
+    - `dashscope_application`：`backend/app/services/ai/adapters/dashscope_application.py`
+    - `dashscope_model`：`backend/app/services/ai/adapters/dashscope_model.py`
 
 ### I) 已修复缺陷（事实）
 

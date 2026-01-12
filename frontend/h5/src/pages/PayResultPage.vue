@@ -22,13 +22,16 @@
       <template v-if="status === 'success'">
         <wx-open-launch-weapp
           v-if="isWeixin && jssdkReady && launch?.appid && bindToken"
+          ref="openWeappRef"
           :appid="launch.appid"
           :path="mpBindPath"
           @error="onOpenTagError"
         >
-          <script type="text/wxtag-template">
-            <van-button type="primary" block>去小程序绑定卡</van-button>
-          </script>
+          <!--
+            注意：微信开放标签要求子节点包含 <script type="text/wxtag-template">。
+            但 Vue/Vite 会在 SFC template 编译阶段忽略 <script> 标签，导致开放标签无内容/报错。
+            这里改为在 mounted 后用 DOM 动态插入 wxtag-template（见下方 ensureWxOpenTagTemplate）。
+          -->
         </wx-open-launch-weapp>
 
         <van-button v-else type="primary" block :loading="launchLoading" @click="openMiniProgramFallback">
@@ -44,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showDialog, showToast } from 'vant'
 import { apiGet } from '../lib/api'
@@ -85,6 +88,30 @@ const bindToken = computed(() => bind.value?.bindToken || '')
 const isWeixin = computed(() => isWeixinBrowser())
 const mpBindPath = computed(() => `pages/card/bind-by-token?token=${encodeURIComponent(bindToken.value)}`)
 const jssdkReady = ref(false)
+
+// wx-open-launch-weapp 是开放标签：它需要子节点里有 <script type="text/wxtag-template"> 作为渲染模板
+// 但 Vue 模板编译会忽略 <script>，因此我们必须在运行时动态插入该节点
+const openWeappRef = ref<HTMLElement | null>(null)
+const openTagTemplateInjected = ref(false)
+
+async function ensureWxOpenTagTemplate() {
+  await nextTick()
+  const el = openWeappRef.value
+  if (!el) return
+  // 避免重复插入（比如页面状态变化、热更新等）
+  const existed = el.querySelector('script[type="text/wxtag-template"]')
+  if (existed) {
+    openTagTemplateInjected.value = true
+    return
+  }
+
+  const script = document.createElement('script')
+  script.type = 'text/wxtag-template'
+  // 注意：这里是给微信开放标签渲染的“原生 HTML”，不能放 Vue 组件（如 <van-button>）
+  script.innerHTML = `<button class="wx-open-launch-btn" type="button">去小程序绑定卡</button>`
+  el.appendChild(script)
+  openTagTemplateInjected.value = true
+}
 
 function goHome() {
   // 首页是产品介绍页；不携带 dealerLinkId，避免“返回首页”再次跳回购卡页
@@ -171,6 +198,13 @@ onMounted(() => {
       })
   }
 })
+
+watchEffect(() => {
+  // 条件满足且开放标签已渲染时，动态插入 wxtag-template
+  if (isWeixin.value && jssdkReady.value && launch.value?.appid && bindToken.value && !openTagTemplateInjected.value) {
+    ensureWxOpenTagTemplate().catch(() => {})
+  }
+})
 </script>
 
 <style scoped>
@@ -224,6 +258,19 @@ onMounted(() => {
   margin-top: 16px;
   display: grid;
   gap: 10px;
+}
+
+/* wx-open-launch-weapp 的 wxtag-template 里使用的按钮样式（模拟“主按钮 + block”） */
+.wx-open-launch-btn {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--lh-teal-600, #14b8a6);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 44px;
 }
 </style>
 

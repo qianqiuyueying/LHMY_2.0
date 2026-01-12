@@ -76,7 +76,7 @@ async function loadAccount() {
     acctForm.bankName = String(data.bankName || '')
     acctForm.bankBranch = String(data.bankBranch || '')
     acctForm.contactPhone = String(data.contactPhone || '')
-  } catch (e: any) {
+  } catch {
     acct.value = null
   } finally {
     acctLoading.value = false

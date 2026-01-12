@@ -131,6 +131,7 @@
 #### D7) AI 对话
 
 - [x] AI chat：`POST /api/v1/ai/chat`（Header: `Idempotency-Key`）  
+  - v2 请求体：`{ scene, message }`（小程序只关心 scene，不暴露模型/Provider/参数）  
   - 证据：`frontend/mini-program/pages/ai-chat/ai-chat.js`
 
 

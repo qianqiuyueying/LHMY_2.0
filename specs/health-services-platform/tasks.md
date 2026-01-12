@@ -1068,6 +1068,56 @@
   - **实现证据（文本）**：
     - Admin 订单监管视图说明：`frontend/admin/src/pages/admin/AdminOrdersByTypePage.vue`
 
+- [ ] **REQ-ADMIN-P1-019：订单监管（基建联防/健行天下）彻底按业务线分开 + 列表摘要字段补齐 + 详情抽屉**
+  - **背景/问题**
+    - 当前管理后台存在“订单监管”能力，但订单列表字段偏少，难以支持订单管理（无法快速识别“买了什么/当前履约进度”）。
+    - 业务上存在两类订单：
+      - **基建联防**：电商商品/服务订单（`orderType=PRODUCT`，可能包含物流履约）
+      - **健行天下**：服务包购卡订单（`orderType=SERVICE_PACKAGE`，允许匿名购卡）
+    - 这两类订单虽然共用表结构（`orders/order_items`），但在运营语境与关注字段上不同，页面展示必须拆分，避免混用造成误读。
+  - **目标**
+    - 管理后台提供 2 个明确的订单监管页面入口：
+      - `基建联防 → 订单监管（商品/服务）`：仅展示 `PRODUCT`
+      - `健行天下 → 订单监管（服务包）`：仅展示 `SERVICE_PACKAGE`
+    - 列表增加“订单摘要”字段：**`firstItemTitle + itemsCount`**，用于快速识别（列表只负责快速识别，不承载完整明细）。
+    - 提供“订单详情抽屉”：展示订单关键字段与 `order_items` 明细，物流订单在详情内展示（脱敏后的）收货地区信息。
+    - 服务包匿名订单：下单时写入“联系方式快照”（至少脱敏），以便后台可追踪与管理。
+  - **范围（页面/接口/模型）**
+    - Admin 页面：
+      - `frontend/admin/src/pages/admin/AdminOrdersByTypePage.vue`（两个业务线复用同页，靠路由 meta 固定 orderType）
+      - （可选）保留 `AdminOrdersPage.vue` 作为历史/调试页，但不作为菜单入口（避免混用）
+    - Admin 列表接口：
+      - `GET /api/v1/admin/orders`（返回字段补齐）
+    - 订单详情接口（已存在）：
+      - `GET /api/v1/orders/{id}`（Admin 可用；补齐必要字段/脱敏口径）
+    - 下单接口（服务包匿名）：
+      - `POST /api/v1/orders`（匿名 SERVICE_PACKAGE 必须提交 `buyerPhone`）
+    - 数据模型：
+      - `orders.buyer_phone`：匿名购卡时写入买家手机号快照（数据库存明文，用于后端筛选；对外返回仅脱敏）
+  - **字段与脱敏规则（最小）**
+    - Admin 列表（`GET /admin/orders`）新增/明确字段：
+      - `itemsCount: number`：该订单包含的明细数量（按 `order_items` 聚合）
+      - `firstItemTitle: string | null`：该订单用于识别的“第一条标题”（按 `order_items.title` 聚合，定义为 `MIN(title)`；仅用于识别，不承诺真实购买顺序）
+      - `dealerLinkId: string | null`：投放链接 ID（用于健行天下投放追踪）
+      - `buyerPhoneMasked: string | null`：若为匿名服务包订单，来自 `orders.buyer_phone` 脱敏；若为实名订单，可来自 `users.phone` 脱敏
+    - Admin 详情（`GET /orders/{id}`，Admin 场景）：
+      - `shippingAddress` 仅返回省/市/区 code + `phoneMasked`（不返回收货人姓名/手机号明文/详细地址）
+      - 运单号不返回明文，仅 `trackingNoLast4`
+  - **交互规则（最小）**
+    - 列表新增“订单摘要”列：展示 `firstItemTitle`（一行）+ “共 N 项”。
+    - 列表提供“详情”按钮：打开抽屉加载 `GET /orders/{id}` 并展示：
+      - 订单基础信息（订单号、支付状态、金额拆分、履约状态、时间）
+      - 明细列表（title/quantity/unitPrice/totalPrice 等）
+      - 物流订单的（脱敏）收货地区信息
+    - 物流订单补齐“标记妥投”入口（调用 `POST /api/v1/admin/orders/{id}/deliver`）
+  - **验收标准（DoD）**
+    - [ ] 菜单入口拆分：两个业务线各自的订单监管入口打开后只展示自己的 `orderType`
+    - [ ] 列表展示新增“订单摘要（标题+数量）”，并能快速识别订单内容
+    - [ ] 点“详情”能看到订单关键字段 + `order_items` 明细；物流订单详情能看到脱敏收货地区
+    - [ ] 匿名服务包下单必须传 `buyerPhone`，并能在 Admin 列表中以 `buyerPhoneMasked` 呈现
+    - [ ] Admin 端不泄露手机号明文、运单号明文、收货人姓名与详细地址
+  - **实现证据（文本）**：TBD（完成后补齐到 `facts/admin.md`、`facts/backend.md`、`facts/h5.md`）
+
 - [x] **REQ-ADMIN-P0-011：分账与结算页面彻底去 JSON 输入 + 文案中文化**
   - **背景/问题**：让 Admin 手填 JSON 不可用；“结算单”tab 的字段（dealerId/cycle）仍是英文显示。
   - **目标**：分账比例与结算账户等均用表单/表格交互；字段展示中文化。
@@ -1653,6 +1703,33 @@
   - **确认结论（进入实现）**：
     - 接受“快捷入口最多两行”（最多 8 个）
     - 当入口超过两行时，新增“更多入口”页面承载完整入口列表，并提供“更多”入口跳转
+
+---
+
+#### 3.7 AI 能力平台（Provider/Strategy/Gateway，v2）
+
+- [ ] **REQ-AI-P0-001：AI 配置体系重构为 Provider + Strategy（可替换三年不重写）**
+  - **背景/问题**：
+    - 现状 AI 为 v1（SystemConfig `AI_CONFIG`）强绑定 OpenAI compatible：`baseUrl/apiKey/model` + 端侧 messages。
+    - 需引入 DashScope（应用模式/模型模式），未来还可能接入其他 Provider，不能把模型/SDK 细节暴露到 Admin/小程序。
+  - **目标**：
+    - Admin：分为 Provider（技术配置）与 Strategy（业务语义）两层；Strategy 与 Provider 解耦、可切换。
+    - 后端：统一 AI Gateway + Provider Adapter，屏蔽 SDK/HTTP/App/Model 差异。
+    - 小程序：只传 `scene + message`，不暴露任何技术参数。
+  - **规格依据（单一真相来源）**：
+    - `specs/health-services-platform/ai-gateway-v2.md`
+  - **范围（候选）**：
+    - 后端：`backend/app/api/v1/ai.py`、新增 `app/services/ai/*`、新增 models + alembic 迁移
+    - Admin：新增 Provider 管理页 / Strategy 管理页 / 绑定页；旧 AI 配置页提供迁移入口
+    - 小程序：`frontend/mini-program/pages/ai-chat/*`
+  - **验收标准（DoD）**：
+    - [ ] Admin 不出现 “GPT/Qwen/Claude” 等模型品牌文案；不要求运营理解 model/sdk
+    - [ ] Provider 支持至少：`dashscope_application` + `openapi_compatible`；且支持“连接测试”
+    - [ ] Strategy 中不出现 model/apiKey/appId/endpoint；`generation_config` 为建议值，可降级忽略
+    - [ ] 小程序请求改为：`POST /api/v1/ai/chat { scene, message }`；禁止端侧传 model/apiKey/temperature/tokens
+    - [ ] 风控：health 场景具备“非医疗声明 + 拒绝诊断类问题”
+    - [ ] 审计：AI 调用只记录元数据（scene/provider/strategy/latency/result），不落库对话内容
+  - **实现证据（文本）**：TBD（完成后补齐到 `facts/backend.md`、`facts/admin.md`、`facts/mini-program.md`）
 
 ### 4) 澄清问题（需要你确认后才能进入编码实现）
 

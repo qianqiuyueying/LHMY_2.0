@@ -52,6 +52,12 @@ class Order(Base):
     dealer_link_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, index=True, comment="投放链接ID（dealerLinkId）"
     )
+    buyer_phone: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        index=True,
+        comment="买家手机号快照（用于 H5 匿名购卡订单；对外返回仅脱敏）",
+    )
 
     # 物流商品 v2：履约与收货信息（仅当 fulfillmentType=PHYSICAL_GOODS 时适用）
     fulfillment_type: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="履约类型：SERVICE/PHYSICAL_GOODS")

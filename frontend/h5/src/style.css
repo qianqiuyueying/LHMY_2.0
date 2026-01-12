@@ -54,6 +54,13 @@
   --van-nav-bar-text-color: var(--lh-slate-900);
   --van-nav-bar-icon-color: var(--lh-slate-900);
   --van-nav-bar-title-text-color: var(--lh-slate-900);
+
+  /* Dialog 需要有“容器背景”，否则在我们全局透明背景设定下会出现“只有遮罩和文字”的观感 */
+  /* 这里仅针对 Dialog 单独还原背景，不影响其它组件的透明风格 */
+  --van-dialog-background: var(--lh-card-bg);
+
+  /* Popup（如“服务协议”弹层）同理需要实体背景，否则会出现“只有遮罩和文字/内容漂浮” */
+  --van-popup-background: var(--lh-card-bg);
 }
 
 html,
@@ -109,6 +116,14 @@ a {
 .van-popup--bottom.van-popup--round {
   border-top-left-radius: 18px;
   border-top-right-radius: 18px;
+  background: var(--lh-card-bg);
+  box-shadow: 0 -18px 50px rgba(2, 6, 23, 0.18);
+}
+
+/* 兜底：如果当前 Vant 版本未使用 --van-dialog-background，则直接恢复 dialog 容器背景 */
+.van-dialog {
+  background: var(--lh-card-bg);
+  box-shadow: 0 18px 50px rgba(2, 6, 23, 0.18);
 }
 
 /* CTA 皮肤：强调色（用于“购买/提交”这类关键行动） */
